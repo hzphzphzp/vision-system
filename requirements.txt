@@ -1,0 +1,82 @@
+# Vision System Requirements
+# 
+# This file contains all the Python dependencies needed for the Vision System
+# Updated: 2025-01-12
+
+# =============================================================================
+# Core dependencies
+# =============================================================================
+numpy>=1.26.4,<2.0.0
+opencv-python>=4.5.0
+opencv-contrib-python>=4.5.0
+PyQt5>=5.15.0
+
+# Optional dependencies for PyQt6
+# PyQt6>=6.0.0  # Uncomment if you prefer PyQt6
+
+# =============================================================================
+# Testing dependencies
+# =============================================================================
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# =============================================================================
+# Camera support (optional)
+# =============================================================================
+# hikrobot-mvs-sdk  # This would need to be installed separately from HikRobot
+
+# =============================================================================
+# Development dependencies
+# =============================================================================
+black>=22.0.0
+flake8>=5.0.0
+mypy>=1.0.0
+
+# =============================================================================
+# Additional image processing libraries
+# =============================================================================
+Pillow>=9.0.0
+scikit-image>=0.19.0
+
+# =============================================================================
+# Data analysis
+# =============================================================================
+pandas>=1.5.0
+matplotlib>=3.5.0
+
+# =============================================================================
+# Logging and configuration
+# =============================================================================
+pyyaml>=6.0
+
+# =============================================================================
+# OCR dependencies (2025-01-12 added)
+# =============================================================================
+# EasyOCR - for OCR text recognition
+easyocr>=1.7.2
+
+# PyTorch - required by EasyOCR (CPU version)
+# IMPORTANT: Use specific versions compatible with numpy 1.26.x
+torch>=2.1.0,<2.2.0
+torchvision>=0.16.0,<0.17.0
+
+# python-bidi - required by EasyOCR for text layout
+python-bidi>=0.6.3
+
+# =============================================================================
+# Optional: Deep Learning (for YOLO26)
+# =============================================================================
+# Ultralytics YOLO26 - for object detection
+ultralytics>=8.4.7
+
+# =============================================================================
+# Optional: PaddlePaddle (for PaddleOCR)
+# =============================================================================
+# paddlepaddle>=2.5.0  # Uncomment if PaddleOCR is needed
+# paddlepaddleocr>=2.7.0  # Uncomment if PaddleOCR is needed
+
+# =============================================================================
+# Performance optimization (2026-01-27 added)
+# =============================================================================
+# Polars - for high-performance data processing
+polars>=1.0.0

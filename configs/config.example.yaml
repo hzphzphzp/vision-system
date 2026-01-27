@@ -1,0 +1,64 @@
+# Vision System 配置文件示例
+#
+# 此文件为示例配置，实际配置会在首次运行时自动生成
+
+# 系统配置
+system:
+  name: Vision System
+  version: 1.0.0
+  debug: false
+  log_level: INFO
+  max_concurrent_tools: 10
+
+# 相机配置
+camera:
+  default_id: 0
+  fps: 30
+  width: 640
+  height: 480
+  auto_exposure: true
+  auto_gain: true
+
+# 图像处理配置
+image_processing:
+  default_kernel_size: 3
+  default_blur_size: 5
+  default_threshold: 128
+  default_min_area: 100
+  default_max_area: 10000
+  default_sensitivity: 0.5
+
+# OCR配置
+ocr:
+  language: ch_sim
+  min_confidence: 0.5
+  text_only: true
+  skip_special: true
+
+# 目标检测配置
+object_detection:
+  model_path: models/yolo26s.pt
+  confidence_threshold: 0.5
+  iou_threshold: 0.45
+  max_det: 1000
+
+# 性能配置
+performance:
+  enable_polars: true
+  enable_gpu: false
+  batch_size: 1
+  enable_cache: true
+  cache_size: 100
+
+# 路径配置
+paths:
+  templates: templates
+  models: models
+  output: output
+  logs: logs
+
+# 通信配置
+communication:
+  default_timeout: 5.0
+  default_port: 8080
+  buffer_size: 4096

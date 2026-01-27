@@ -1,0 +1,82 @@
+# IDE配置文件
+.idea/
+.vscode/
+*.iml
+
+# 编译产物和缓存目录
+__pycache__/
+.pytest_cache/
+coverage_report/
+.runs/
+
+# 虚拟环境
+venv/
+env/
+
+# 依赖管理
+node_modules/
+bun.lock
+package-lock.json
+
+# 日志文件
+*.log
+
+# 测试文件和临时文件
+test_image.jpg
+test_save.vmsol
+nul
+*.exe
+*.zip
+
+# 大型模型文件
+modules/cpu_optimization/models/*.pt
+
+# 工具和配置文件
+.trae/
+.opencode/
+opencode/
+skills/
+superpowers/
+
+# 备份文件
+*.backup
+*.bak
+
+# 其他临时文件
+*.swp
+*.swo
+*~
+
+# 环境变量文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 操作系统文件
+Thumbs.db
+.DS_Store
+
+# 构建文件
+build/
+dist/
+*.egg-info/
+
+# 代码覆盖率文件
+.coverage
+coverage.xml
+
+# 文档构建
+/docs/_build/
+
+# 项目特定
+runs/
+install.ps1
+performance_optimization_summary.md
+config_management_summary.md

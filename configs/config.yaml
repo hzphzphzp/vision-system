@@ -1,0 +1,45 @@
+camera:
+  auto_exposure: true
+  auto_gain: true
+  default_id: 1
+  fps: 30
+  height: 480
+  width: 640
+communication:
+  buffer_size: 4096
+  default_port: 8080
+  default_timeout: 5.0
+image_processing:
+  default_blur_size: 5
+  default_kernel_size: 3
+  default_max_area: 10000
+  default_min_area: 100
+  default_sensitivity: 0.5
+  default_threshold: 150
+object_detection:
+  confidence_threshold: 0.5
+  iou_threshold: 0.45
+  max_det: 1000
+  model_path: models/yolo26s.pt
+ocr:
+  language: ch_sim+en
+  min_confidence: 0.6
+  skip_special: true
+  text_only: true
+paths:
+  logs: D:\vision_system-opencode\logs
+  models: D:\vision_system-opencode\models
+  output: D:\vision_system-opencode\output
+  templates: D:\vision_system-opencode\templates
+performance:
+  batch_size: 4
+  cache_size: 100
+  enable_cache: true
+  enable_gpu: true
+  enable_polars: true
+system:
+  debug: false
+  log_level: DEBUG
+  max_concurrent_tools: 15
+  name: Vision System
+  version: 1.0.0
