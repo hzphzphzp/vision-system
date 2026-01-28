@@ -25,6 +25,14 @@ logging.basicConfig(level=logging.INFO)
 # 设置protobuf兼容模式（解决paddlepaddle兼容性问题）
 os.environ.setdefault('PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION', 'python')
 
+# 导入热重载功能
+try:
+    from utils.hot_reload import create_hot_reload_manager
+    HOT_RELOAD_AVAILABLE = True
+except ImportError:
+    HOT_RELOAD_AVAILABLE = False
+    print("[警告] 热重载功能不可用，请安装 watchdog 库")
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Optional, Dict, Any, List
@@ -1036,6 +1044,11 @@ class MainWindow(QMainWindow):
         self._init_ui()
         self._create_status_bar()
         
+        # 初始化热重载功能
+        self.hot_reload_manager = None
+        if HOT_RELOAD_AVAILABLE:
+            self._initialize_hot_reload()
+        
         self._logger.info("主窗口初始化完成")
     
     def _init_ui(self):
@@ -1329,6 +1342,8 @@ class MainWindow(QMainWindow):
         comm_monitor_action.triggered.connect(self.show_communication_monitor)
         comm_menu.addAction(comm_monitor_action)
         
+
+        
     def _create_tool_bar(self):
         """创建工具栏"""
         toolbar = QToolBar("工具栏")
@@ -1464,8 +1479,76 @@ class MainWindow(QMainWindow):
         perf_monitor_action.triggered.connect(self._show_performance_monitor)
         toolbar.addAction(perf_monitor_action)
         
+        toolbar.addSeparator()
+        
+        # 相机设置
+        camera_settings_action = QAction("📷 相机设置", self)
+        camera_settings_action.setToolTip("打开相机参数设置对话框 (F9)")
+        camera_settings_action.triggered.connect(self._show_camera_settings)
+        toolbar.addAction(camera_settings_action)
+        
         # 连接缩放变化信号
         self.image_view.zoom_changed.connect(self._on_zoom_changed)
+    
+    def _initialize_hot_reload(self):
+        """初始化热重载功能"""
+        try:
+            # 监控项目根目录和子目录
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            paths_to_monitor = [
+                os.path.join(project_root, "tools"),
+                os.path.join(project_root, "core"),
+                os.path.join(project_root, "data"),
+                os.path.join(project_root, "ui"),
+                os.path.join(project_root, "modules"),
+                os.path.join(project_root, "utils")
+            ]
+            
+            # 过滤不存在的路径
+            paths_to_monitor = [p for p in paths_to_monitor if os.path.exists(p)]
+            
+            # 创建热重载管理器
+            self.hot_reload_manager = create_hot_reload_manager(paths_to_monitor)
+            
+            # 添加重载回调
+            self.hot_reload_manager.add_reload_callback(self._on_hot_reload)
+            
+            # 启动热重载
+            self.hot_reload_manager.start()
+            self._logger.info("热重载功能已启动")
+            self.status_label.setText("🟢 就绪 (热重载已启用) - 请从左侧工具库拖拽工具到算法编辑器")
+        except Exception as e:
+            self._logger.error(f"热重载功能初始化失败: {e}")
+    
+    def _on_hot_reload(self):
+        """热重载回调函数"""
+        try:
+            # 刷新工具库
+            if hasattr(self, 'tool_library_dock'):
+                self.tool_library_dock.refresh()
+            
+            # 刷新属性面板
+            if hasattr(self, 'property_dock') and self.property_dock.current_tool:
+                self.property_dock.update_properties(self.property_dock.current_tool)
+            
+            # 刷新结果面板
+            if hasattr(self, 'result_dock'):
+                self.result_dock.refresh()
+            
+            self._logger.info("热重载完成，界面已更新")
+            self.status_label.setText("🟢 热重载完成 - 界面已更新")
+        except Exception as e:
+            self._logger.error(f"热重载回调执行失败: {e}")
+    
+    def closeEvent(self, event):
+        """关闭窗口事件"""
+        # 停止热重载
+        if hasattr(self, 'hot_reload_manager') and self.hot_reload_manager:
+            self.hot_reload_manager.stop()
+            self._logger.info("热重载功能已停止")
+        
+        # 调用父类方法
+        super().closeEvent(event)
     
     def _create_status_bar(self):
         """创建状态栏"""
@@ -1494,6 +1577,7 @@ class MainWindow(QMainWindow):
                 padding-right: 15px;
             }
         """)
+        
         status_bar.addWidget(self.status_label)
         
         # 分割线
@@ -1649,21 +1733,36 @@ class MainWindow(QMainWindow):
         
         # 查找流程中的工具并更新参数
         if self.current_procedure and hasattr(self.current_procedure, '_tools'):
-            for tool in self.current_procedure._tools.values():
-                # 匹配工具名称
-                if tool_name in tool._name or tool._name in tool_name:
-                    tool.set_param(param_name, new_value)
-                    self._logger.info(f"已更新工具参数: {tool._name}.{param_name} = {new_value}")
-                    
-                    # 调用initialize方法应用参数变更
-                    if hasattr(tool, 'initialize') and callable(tool.initialize):
-                        try:
-                            params = tool.get_all_params()
-                            tool.initialize(params)
-                            self._logger.debug(f"工具已重新初始化: {tool.name}")
-                        except Exception as e:
-                            self._logger.warning(f"工具重新初始化失败: {e}")
-                    break
+            # 首先尝试精确匹配
+            if tool_name in self.current_procedure._tools:
+                tool = self.current_procedure._tools[tool_name]
+                tool.set_param(param_name, new_value)
+                self._logger.info(f"已更新工具参数: {tool._name}.{param_name} = {new_value}")
+                
+                # 调用initialize方法应用参数变更
+                if hasattr(tool, 'initialize') and callable(tool.initialize):
+                    try:
+                        params = tool.get_all_params()
+                        tool.initialize(params)
+                        self._logger.debug(f"工具已重新初始化: {tool.name}")
+                    except Exception as e:
+                        self._logger.warning(f"工具重新初始化失败: {e}")
+            else:
+                # 尝试包含匹配作为后备
+                for tool in self.current_procedure._tools.values():
+                    if tool_name in tool._name:
+                        tool.set_param(param_name, new_value)
+                        self._logger.info(f"已更新工具参数: {tool._name}.{param_name} = {new_value}")
+                        
+                        # 调用initialize方法应用参数变更
+                        if hasattr(tool, 'initialize') and callable(tool.initialize):
+                            try:
+                                params = tool.get_all_params()
+                                tool.initialize(params)
+                                self._logger.debug(f"工具已重新初始化: {tool.name}")
+                            except Exception as e:
+                                self._logger.warning(f"工具重新初始化失败: {e}")
+                        break
     
     def _on_roi_select_requested(self, tool_name: str, param_name: str, current_image):
         """ROI选择请求事件"""
@@ -2111,9 +2210,34 @@ class MainWindow(QMainWindow):
             self._logger.error(f"未找到工具数据: {tool_name}")
             return
         
+        # 获取工具类型名称（用于命名）
+        tool_type_name = tool_data.name
+        self._logger.debug(f"工具类型名称: {tool_type_name}")
+        
+        # 生成规范的工具名称：工具类型名称_序号
+        # 统计当前流程中同类型工具的数量
+        tool_count = 0
+        if self.current_procedure:
+            for existing_tool in self.current_procedure.tools:
+                # 检查现有工具是否为同类型（通过工具实例的类型名称判断）
+                if hasattr(existing_tool, 'tool_name'):
+                    # 提取现有工具的类型名称（去掉序号部分）
+                    existing_tool_type = existing_tool.tool_name.split('_')[0]
+                    if existing_tool_type == tool_type_name:
+                        tool_count += 1
+        
+        # 生成递增的序号
+        new_tool_name = f"{tool_type_name}_{tool_count + 1}"
+        
+        # 确保名称唯一（防止重复）
+        counter = tool_count + 1
+        while self.current_procedure and self.current_procedure.get_tool(new_tool_name) is not None:
+            counter += 1
+            new_tool_name = f"{tool_type_name}_{counter}"
+        
         # 创建工具实例
         self._logger.info(f"创建工具实例: {tool_data.category}.{tool_data.name}")
-        tool = ToolRegistry.create_tool(tool_data.category, tool_data.name, tool_name)
+        tool = ToolRegistry.create_tool(tool_data.category, tool_data.name, new_tool_name)
         
         if tool is None:
             self._logger.error(f"创建工具实例失败: {tool_data.category}.{tool_data.name}")
@@ -2123,7 +2247,7 @@ class MainWindow(QMainWindow):
         if hasattr(tool, 'initialize') and callable(tool.initialize):
             params = tool.get_all_params()
             tool.initialize(params)
-            self._logger.info(f"工具已初始化: {tool_name}")
+            self._logger.info(f"工具已初始化: {new_tool_name}")
         
         # 创建图形项
         self._logger.debug(f"创建图形项，位置: {position}")
@@ -2133,8 +2257,8 @@ class MainWindow(QMainWindow):
         self.algorithm_scene.addItem(graphics_item)
         
         # 保存
-        self.tool_items[tool_name] = graphics_item
-        self._logger.debug(f"保存工具图形项: {tool_name}")
+        self.tool_items[new_tool_name] = graphics_item
+        self._logger.debug(f"保存工具图形项: {new_tool_name}")
         
         # 添加到流程
         if self.current_procedure:
@@ -2147,8 +2271,8 @@ class MainWindow(QMainWindow):
         self._update_project_tree()
         self._logger.debug("更新项目树")
         
-        self.update_status(f"已添加工具: {tool_name}")
-        self._logger.info(f"工具创建完成: {tool_name}")
+        self.update_status(f"已添加工具: {new_tool_name}")
+        self._logger.info(f"工具创建完成: {new_tool_name}")
     
     def _on_port_connection(self, from_port: PortItem, to_port: PortItem):
         """端口连线回调函数
@@ -2157,19 +2281,27 @@ class MainWindow(QMainWindow):
             from_port: 源端口（输出端口）
             to_port: 目标端口（输入端口）
         """
-        # 获取工具名称
-        from_tool_name = from_port.parent_item.tool.tool_name
-        to_tool_name = to_port.parent_item.tool.tool_name
+        # 获取工具实例
+        from_tool = from_port.parent_item.tool
+        to_tool = to_port.parent_item.tool
         
-        self._logger.info(f"[MAIN] 端口连线: {from_tool_name} -> {to_tool_name}")
+        # 获取工具类型名称（用于显示）
+        from_tool_display = from_tool.tool_name
+        to_tool_display = to_tool.tool_name
+        
+        # 获取工具实例的唯一名称（用于连接）
+        from_tool_name = from_tool.name
+        to_tool_name = to_tool.name
+        
+        self._logger.info(f"[MAIN] 端口连线: {from_tool_display}({from_tool_name}) -> {to_tool_display}({to_tool_name})")
         
         # 调用连接工具方法
         success = self.connect_tools(from_tool_name, to_tool_name)
         
         if success:
-            self.update_status(f"已连接: {from_tool_name} -> {to_tool_name}")
+            self.update_status(f"已连接: {from_tool_display} -> {to_tool_display}")
         else:
-            self.update_status(f"连接失败: {from_tool_name} -> {to_tool_name}")
+            self.update_status(f"连接失败: {from_tool_display} -> {to_tool_display}")
     
     def _on_tool_clicked(self, tool_item: 'GraphicsToolItem'):
         """工具点击事件 - 显示该工具的输出图像
@@ -2609,11 +2741,38 @@ class MainWindow(QMainWindow):
     
     def _show_camera_settings(self):
         """显示相机设置"""
-        from tools.image_source import CameraSettingsDialog
-        
-        dialog = CameraSettingsDialog(self)
-        dialog.show()
-        dialog.shutdown()
+        try:
+            # 检查是否有已添加的相机工具
+            from tools.image_source import CameraSource
+            
+            # 获取当前流程中的相机工具
+            camera_tools = []
+            for procedure in self._procedure_manager.procedures:
+                for tool in procedure.tools:
+                    if isinstance(tool, CameraSource):
+                        camera_tools.append(tool)
+            
+            if camera_tools:
+                # 如果有相机工具，使用第一个相机工具的设置实例
+                camera_tool = camera_tools[0]
+                result = camera_tool.show_settings_dialog(self)
+            else:
+                # 如果没有相机工具，创建临时实例
+                from tools.camera_parameter_setting import CameraParameterSettingTool
+                tool = CameraParameterSettingTool("camera_settings")
+                result = tool.show_parameter_dialog(self)
+            
+            if result == 1:  # QDialog.Accepted
+                self.update_status("相机参数设置已应用")
+            else:
+                self.update_status("相机参数设置已取消")
+                
+        except ImportError as e:
+            self._logger.error(f"导入相机参数设置模块失败: {e}")
+            QMessageBox.warning(self, "错误", f"导入相机参数设置模块失败: {str(e)}")
+        except Exception as e:
+            self._logger.error(f"显示相机设置失败: {e}")
+            QMessageBox.warning(self, "错误", f"显示相机设置失败: {str(e)}")
     
     def open_solution(self):
         """打开方案"""
@@ -2706,13 +2865,24 @@ class MainWindow(QMainWindow):
                 
                 # 对于非图像源工具，从上游工具获取输入
                 if tool.tool_category != "ImageSource":
-                    # 查找连接到该工具的输出端口的工具
-                    from_tool = self._get_upstream_tool(tool)
-                    if from_tool and from_tool.has_output():
-                        input_data = from_tool.get_output("OutputImage")
-                        if input_data and input_data.is_valid:
-                            tool.set_input(input_data, "InputImage")
-                            self._logger.info(f"[RUN] 从 {from_tool.tool_name} 获取输入图像")
+                    # 特殊处理图像拼接工具，需要多张图像
+                    if hasattr(tool, 'tool_name') and tool.tool_name == "图像拼接":
+                        # 收集所有图像源工具的输出
+                        image_source_tools = [t for t in execution_order if t.tool_category == "ImageSource" and t.has_output()]
+                        if image_source_tools:
+                            for from_tool in image_source_tools:
+                                input_data = from_tool.get_output("OutputImage")
+                                if input_data and input_data.is_valid:
+                                    tool.set_input(input_data, "InputImage")
+                                    self._logger.info(f"[RUN] 为图像拼接添加输入图像: {from_tool.tool_name}")
+                    else:
+                        # 普通工具，从上游工具获取输入
+                        from_tool = self._get_upstream_tool(tool)
+                        if from_tool and from_tool.has_output():
+                            input_data = from_tool.get_output("OutputImage")
+                            if input_data and input_data.is_valid:
+                                tool.set_input(input_data, "InputImage")
+                                self._logger.info(f"[RUN] 从 {from_tool.tool_name} 获取输入图像")
                 
                 # 执行工具
                 tool.run()

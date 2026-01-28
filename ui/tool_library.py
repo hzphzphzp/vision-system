@@ -389,6 +389,7 @@ class ToolLibraryWidget(QWidget):
             ToolItemData("Communication", "接收数据", "接收数据", "📥", "从外部设备接收数据"),
             
             ToolItemData("Vision", "YOLO26-CPU", "YOLO26-CPU", "🤖", "使用YOLO26模型进行CPU目标检测，支持YOLO26系列模型"),
+            ToolItemData("Vision", "图像拼接", "图像拼接", "🔄", "高性能图像拼接融合算法，支持多张图像自动拼接"),
         ]
         
         # 按类别分组

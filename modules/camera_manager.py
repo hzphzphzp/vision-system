@@ -455,12 +455,25 @@ class HikCamera:
 
 
 class CameraManager:
-    """相机管理器"""
+    """相机管理器 - 单例模式"""
     
-    def __init__(self):
+    _instance = None
+    _lock = threading.RLock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(CameraManager, cls).__new__(cls)
+                    cls._instance._init()
+        return cls._instance
+    
+    def _init(self):
+        """初始化"""
         self._logger = logging.getLogger("CameraManager")
         self._cameras = {}
         self._camera_list = []
+        self._lock = threading.RLock()
     
     def discover_devices(self) -> List[CameraInfo]:
         """发现可用的相机设备"""
@@ -529,7 +542,13 @@ class CameraManager:
     
     def connect(self, camera_id: str) -> Optional[HikCamera]:
         """连接相机"""
-        self._logger.info(f"正在连接相机: {camera_id}")
+        # 确保相机ID格式正确
+        final_camera_id = camera_id
+        if not final_camera_id.startswith('hik_'):
+            final_camera_id = f"hik_{final_camera_id}"
+            self._logger.info(f"使用hik_前缀格式相机ID: {final_camera_id}")
+        
+        self._logger.info(f"正在连接相机: {final_camera_id}")
         
         try:
             from ctypes import byref, sizeof, cast, POINTER
@@ -539,10 +558,21 @@ class CameraManager:
                 self._logger.warning("MVS SDK未安装")
                 return None
             
-            if camera_id in self._cameras:
-                camera = self._cameras[camera_id]
-                if camera.is_connected:
-                    return camera
+            with self._lock:
+                # 检查是否已有该相机的实例
+                if final_camera_id in self._cameras:
+                    camera = self._cameras[final_camera_id]
+                    if camera.is_connected:
+                        self._logger.info(f"使用已连接的相机实例: {final_camera_id}")
+                        return camera
+                    else:
+                        # 如果相机已断开，移除旧实例
+                        del self._cameras[final_camera_id]
+                        self._logger.info(f"移除已断开的相机实例: {final_camera_id}")
+                
+                # 如果相机已连接，直接返回
+                if final_camera_id in self._cameras and self._cameras[final_camera_id].is_connected:
+                    return self._cameras[final_camera_id]
             
             device_list = sdk['MV_CC_DEVICE_INFO_LIST']()
             ret = sdk['MvCamera'].MV_CC_EnumDevices(sdk['MV_GIGE_DEVICE'] | sdk['MV_USB_DEVICE'], device_list)
@@ -551,7 +581,7 @@ class CameraManager:
                 self._logger.error(f"枚举设备失败: 0x{ret:x}")
                 return None
             
-            idx = int(camera_id.split('_')[-1]) if camera_id.startswith('hik_') else int(camera_id)
+            idx = int(final_camera_id.split('_')[-1])
             
             if idx < 0 or idx >= device_list.nDeviceNum:
                 self._logger.error(f"无效的相机索引: {idx}")
@@ -563,8 +593,10 @@ class CameraManager:
             camera = HikCamera(stDeviceInfo)
             camera.connect()
             
-            self._cameras[camera_id] = camera
-            self._logger.info(f"相机连接成功: {camera_id}")
+            with self._lock:
+                self._cameras[final_camera_id] = camera
+            
+            self._logger.info(f"相机连接成功: {final_camera_id}")
             
             return camera
             
@@ -572,32 +604,81 @@ class CameraManager:
             self._logger.warning("MVS SDK未安装")
             return None
         except Exception as e:
+            import traceback
             self._logger.error(f"连接相机失败: {e}")
+            self._logger.error(f"详细错误: {traceback.format_exc()}")
             return None
     
     def disconnect(self, camera_id: str) -> bool:
         """断开相机连接"""
-        if camera_id in self._cameras:
-            camera = self._cameras[camera_id]
-            camera.disconnect()
-            del self._cameras[camera_id]
-            self._logger.info(f"相机已断开: {camera_id}")
-            return True
-        return False
+        # 确保相机ID格式正确
+        final_camera_id = camera_id
+        if not final_camera_id.startswith('hik_'):
+            final_camera_id = f"hik_{final_camera_id}"
+        
+        with self._lock:
+            if final_camera_id in self._cameras:
+                camera = self._cameras[final_camera_id]
+                try:
+                    camera.disconnect()
+                except Exception as e:
+                    self._logger.error(f"断开相机时发生错误: {e}")
+                del self._cameras[final_camera_id]
+                self._logger.info(f"相机已断开: {final_camera_id}")
+                return True
+            else:
+                self._logger.warning(f"相机未连接: {final_camera_id}")
+                return False
     
     def shutdown(self):
         """关闭管理器"""
         self._logger.info("相机管理器正在关闭...")
         
-        for camera_id, camera in list(self._cameras.items()):
-            try:
-                camera.disconnect()
-            except:
-                pass
+        with self._lock:
+            for camera_id, camera in list(self._cameras.items()):
+                try:
+                    camera.disconnect()
+                except Exception as e:
+                    self._logger.error(f"断开相机 {camera_id} 时发生错误: {e}")
+            
+            self._cameras.clear()
         
-        self._cameras.clear()
         self._logger.info("相机管理器已关闭")
     
     def get_camera(self, camera_id: str) -> Optional[HikCamera]:
         """获取已连接的相机"""
-        return self._cameras.get(camera_id)
+        # 确保相机ID格式正确
+        final_camera_id = camera_id
+        if not final_camera_id.startswith('hik_'):
+            final_camera_id = f"hik_{final_camera_id}"
+        
+        with self._lock:
+            camera = self._cameras.get(final_camera_id)
+            if camera and not camera.is_connected:
+                # 如果相机已断开，移除实例
+                del self._cameras[final_camera_id]
+                self._logger.info(f"移除已断开的相机实例: {final_camera_id}")
+                return None
+            return camera
+    
+    def get_connected_cameras(self) -> List[str]:
+        """获取所有已连接相机的ID列表"""
+        with self._lock:
+            connected_cameras = []
+            for camera_id, camera in list(self._cameras.items()):
+                if camera.is_connected:
+                    connected_cameras.append(camera_id)
+                else:
+                    # 清理已断开的相机实例
+                    del self._cameras[camera_id]
+            return connected_cameras
+    
+    def is_camera_connected(self, camera_id: str) -> bool:
+        """检查相机是否已连接"""
+        # 确保相机ID格式正确
+        final_camera_id = camera_id
+        if not final_camera_id.startswith('hik_'):
+            final_camera_id = f"hik_{final_camera_id}"
+        
+        camera = self.get_camera(final_camera_id)
+        return camera is not None and camera.is_connected

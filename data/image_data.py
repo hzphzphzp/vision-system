@@ -116,9 +116,9 @@ class ImageData:
     
     def __init__(self, 
                  data: np.ndarray = None, 
-                 width: int = 0,
-                 height: int = 0,
-                 channels: int = 1,
+                 width: int = None,
+                 height: int = None,
+                 channels: int = None,
                  timestamp: float = None,
                  roi: ROI = None,
                  camera_id: str = None,
@@ -152,7 +152,7 @@ class ImageData:
             self._width = self._data.shape[1]
             self._channels = (self._data.shape[2] if len(self._data.shape) > 2 else 1)
             
-            # 如果提供了参数，使用提供的值
+            # 如果提供了参数且不为None，使用提供的值
             if width is not None:
                 self._width = width
             if height is not None:
@@ -177,9 +177,9 @@ class ImageData:
                     self._pixel_format = PixelFormat.BGRA32
         else:
             # 处理空数据的情况
-            self._width = width or 0
-            self._height = height or 0
-            self._channels = channels or 1
+            self._width = width if width is not None else 0
+            self._height = height if height is not None else 0
+            self._channels = channels if channels is not None else 1
             self._image_type = image_type or ImageDataType.GRAY
             self._pixel_format = pixel_format or PixelFormat.MONO8
     

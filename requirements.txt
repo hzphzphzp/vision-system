@@ -80,3 +80,9 @@ ultralytics>=8.4.7
 # =============================================================================
 # Polars - for high-performance data processing
 polars>=1.0.0
+
+# =============================================================================
+# Development tools (2026-01-27 added)
+# =============================================================================
+# watchdog - for file system monitoring (hot reload functionality)
+watchdog>=3.0.0

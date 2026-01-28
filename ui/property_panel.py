@@ -713,66 +713,71 @@ class PropertyPanelWidget(QWidget):
         param_layout.setSpacing(10)
         param_layout.setVerticalSpacing(10)
         
-        # 遍历参数并创建编辑器
-        for param_name, param_info in params.items():
-            # 使用中文显示名称
-            display_name = param_info['display_name']
-            param_value = param_info['value']
-            param_type = param_info.get('type', 'string')  # 获取参数类型信息
-            description = param_info['description']
-            unit = param_info.get('unit', '')
-            options = param_info.get('options')  # 获取枚举选项
-            option_labels = param_info.get('option_labels')  # 获取选项标签映射
-            
-            # 确定参数类型（优先使用参数指定的类型）
-            qt_param_type = self._get_parameter_type(param_value, param_type)
-            
-            # 创建编辑器
-            label, editor = ParameterWidgetFactory.create_parameter_widget(
-                qt_param_type,
-                param_value,
-                label=display_name,
-                param_name=param_name,
-                tooltip=description,
-                options=options,
-                option_labels=option_labels
-            )
-            
-            # 设置标签样式
-            label.setStyleSheet("""
-                QLabel {
-                    color: #2c3e50;
-                    font-size: 11px;
-                    min-width: 80px;
-                    padding: 2px 0;
-                }
-            """)
-            
-            # 如果有单位，添加到标签
-            if unit:
-                label.setText(f"{display_name} ({unit})")
+        # 检查是否为相机工具
+        is_camera_tool = hasattr(tool, 'tool_name') and tool.tool_name == "相机"
+        
+        # 如果是相机工具，只显示相机设置按钮，不显示具体参数
+        if is_camera_tool:
+            # 为相机工具添加设置按钮
+            self._add_camera_settings_button(tool, param_layout)
+        else:
+            # 非相机工具，正常显示所有参数
+            # 遍历参数并创建编辑器
+            for param_name, param_info in params.items():
+                # 使用中文显示名称
+                display_name = param_info['display_name']
+                param_value = param_info['value']
+                param_type = param_info.get('type', 'string')  # 获取参数类型信息
+                description = param_info['description']
+                unit = param_info.get('unit', '')
+                options = param_info.get('options')  # 获取枚举选项
+                option_labels = param_info.get('option_labels')  # 获取选项标签映射
+                
+                # 确定参数类型（优先使用参数指定的类型）
+                qt_param_type = self._get_parameter_type(param_value, param_type)
+                
+                # 创建编辑器
+                label, editor = ParameterWidgetFactory.create_parameter_widget(
+                    qt_param_type,
+                    param_value,
+                    label=display_name,
+                    param_name=param_name,
+                    tooltip=description,
+                    options=options,
+                    option_labels=option_labels
+                )
+                
+                # 设置标签样式
                 label.setStyleSheet("""
                     QLabel {
-                        color: #7f8c8d;
-                        font-size: 10px;
+                        color: #2c3e50;
+                        font-size: 11px;
                         min-width: 80px;
                         padding: 2px 0;
-                        font-style: italic;
                     }
                 """)
-            
-            # 连接信号
-            self._connect_parameter_signal(editor, param_name)
-            
-            # 添加到布局
-            param_layout.addRow(label, editor)
-            
-            # 保存编辑器引用
-            self._parameter_widgets[param_name] = editor
-        
-        # 为相机工具添加设置按钮
-        if hasattr(tool, 'tool_name') and tool.tool_name == "相机":
-            self._add_camera_settings_button(tool, param_layout)
+                
+                # 如果有单位，添加到标签
+                if unit:
+                    label.setText(f"{display_name} ({unit})")
+                    label.setStyleSheet("""
+                        QLabel {
+                            color: #7f8c8d;
+                            font-size: 10px;
+                            min-width: 80px;
+                            padding: 2px 0;
+                            font-style: italic;
+                        }
+                    """)
+                
+                # 连接信号
+                self._connect_parameter_signal(editor, param_name)
+                
+                # 添加到布局
+                param_layout.addRow(label, editor)
+                
+                # 保存编辑器引用
+                self._parameter_widgets[param_name] = editor
         
         # 初始设置模型路径可见性（仅YOLO26-CPU工具）
         if hasattr(tool, 'tool_name') and tool.tool_name == "YOLO26-CPU":

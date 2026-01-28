@@ -85,6 +85,22 @@ except ImportError as e:
     CPUDetector = None
     print(f'[ERROR] YOLO26-CPU工具导入失败: {e}')
 
+# 导入图像拼接工具
+try:
+    from tools.image_stitching import ImageStitchingTool
+    print('[INFO] 图像拼接工具导入成功')
+except ImportError as e:
+    ImageStitchingTool = None
+    print(f'[ERROR] 图像拼接工具导入失败: {e}')
+
+# 导入相机参数设置工具
+try:
+    from tools.camera_parameter_setting import CameraParameterSettingTool
+    print('[INFO] 相机参数设置工具导入成功')
+except ImportError as e:
+    CameraParameterSettingTool = None
+    print(f'[ERROR] 相机参数设置工具导入失败: {e}')
+
 __all__ = [
     # 图像源
     'ImageSource',
@@ -125,4 +141,10 @@ __all__ = [
     
     # CPU优化工具
     'CPUDetector',
+    
+    # 图像拼接工具
+    'ImageStitchingTool',
+    
+    # 相机参数设置工具
+    'CameraParameterSettingTool',
 ]

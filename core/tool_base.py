@@ -689,12 +689,22 @@ class ToolBase(ABC):
             # 优先从 PARAM_DEFINITIONS 获取信息
             if param_name in param_definitions:
                 param_def = param_definitions[param_name]
-                display_name = getattr(param_def, 'name', param_name)
-                description = getattr(param_def, 'description', '')
-                param_type = getattr(param_def, 'param_type', 'string')
-                options = getattr(param_def, 'options', None)
-                option_labels = getattr(param_def, 'option_labels', None)
-                unit = getattr(param_def, 'unit', '')
+                # 处理字典类型的参数定义
+                if isinstance(param_def, dict):
+                    display_name = param_def.get('name', param_name)
+                    description = param_def.get('description', '')
+                    param_type = param_def.get('param_type', 'string')
+                    options = param_def.get('options', None)
+                    option_labels = param_def.get('option_labels', None)
+                    unit = param_def.get('unit', '')
+                else:
+                    # 处理对象类型的参数定义
+                    display_name = getattr(param_def, 'name', param_name)
+                    description = getattr(param_def, 'description', '')
+                    param_type = getattr(param_def, 'param_type', 'string')
+                    options = getattr(param_def, 'options', None)
+                    option_labels = getattr(param_def, 'option_labels', None)
+                    unit = getattr(param_def, 'unit', '')
             else:
                 # 回退到全局映射
                 display_name = PARAM_CHINESE_NAMES.get(param_name, param_name)
