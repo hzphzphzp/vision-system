@@ -1,4 +1,4 @@
-# VisionMaster Python 重构项目
+# Vision System - 视觉检测系统
 
 > 🎯 **海康VisionMaster V4.4.0的Python完整重构版本**  
 > 📅 **项目完成时间**: 2026年1月29日  
@@ -16,6 +16,8 @@
 - 🚀 **代码生成**: 自动生成可执行Python代码
 - 🔄 **连续运行**: 支持单次/连续运行模式
 - 🛡️ **内存优化**: 修复多处内存泄漏问题
+- 📷 **图像拼接**: 支持任意顺序图像拼接，智能融合
+- 🎯 **YOLO26-CPU**: 高性能目标检测，支持CPU优化
 
 ## 🚀 快速开始
 
@@ -93,27 +95,6 @@ python run.py --gui
 数据层 (ImageData/ResultData/ROI)
 ```
 
-## 📚 文档结构
-
-| 文档 | 说明 |
-|------|------|
-| **[END_DOCUMENT.md](docs/END_DOCUMENT.md)** | 项目完成总结文档 |
-| **[TECHNICAL_DOCUMENT.md](docs/TECHNICAL_DOCUMENT.md)** | 详细技术文档 |
-| **[test_integration.py](test_integration.py)** | 集成测试脚本 |
-
-## 🧪 测试验证
-
-```bash
-# 运行集成测试
-python test_integration.py
-
-# 测试结果
-✅ 方案文件管理器测试 - PASSED
-✅ 通信模块增强测试 - PASSED  
-✅ 通信监控面板测试 - PASSED
-🎉 [SUCCESS] 所有案例测试通过！
-```
-
 ## 📁 项目结构
 
 ```
@@ -124,22 +105,86 @@ vision_system-opencode/
 │   ├── enhanced_result_panel.py  # 增强结果面板
 │   └── ...                # 其他UI组件
 ├── 📁 core/                # 核心模块
+│   ├── tool_base.py       # 工具基类
 │   ├── solution.py        # 方案管理
 │   ├── procedure.py       # 流程管理
-│   └── solution_file_manager.py  # 文件管理
+│   └── tool_registry.py   # 工具注册器
 ├── 📁 tools/               # 算法工具
 │   ├── image_source.py    # 图像源
 │   ├── image_filter.py    # 图像处理
+│   ├── image_stitching.py # 图像拼接
 │   ├── analysis.py        # 分析工具
 │   └── communication.py   # 通信工具
 ├── 📁 modules/             # 功能模块
 │   ├── camera_manager.py  # 相机管理
-│   └── basler_camera.py   # Basler相机支持
+│   └── cpu_optimization/  # CPU优化模块
 ├── 📁 data/                # 数据结构
 │   ├── image_data.py      # 图像数据
 │   └── result_data.py     # 结果数据
-├── 📁 docs/                # 文档
-└── 📄 main.py             # 程序入口
+├── 📁 tests/               # 测试代码
+│   ├── test_image_stitching.py  # 图像拼接测试
+│   ├── test_stitching_consistency.py  # 拼接一致性测试
+│   ├── test_tool_position_stability.py  # 工具位置稳定性测试
+│   └── ...                # 其他测试文件
+├── 📁 documentation/       # 技术文档
+│   ├── PROJECT_DOCUMENTATION.md  # 项目综合文档
+│   └── ...                # 其他文档
+├── 📄 main.py             # 程序入口
+├── 📄 requirements.txt    # 依赖文件
+└── 📄 README.md           # 项目说明
+```
+
+## 📚 文档结构
+
+| 文档 | 说明 |
+|------|------|
+| **[PROJECT_DOCUMENTATION.md](documentation/PROJECT_DOCUMENTATION.md)** | 项目综合文档 |
+| **[ERROR_HANDLING_GUIDE.md](documentation/ERROR_HANDLING_GUIDE.md)** | 错误处理指南 |
+
+## 🧪 测试验证
+
+### 测试代码结构
+所有测试代码统一存放在 `tests/` 文件夹中，按功能分类组织：
+
+| 测试类别 | 测试文件 | 说明 |
+|---------|---------|------|
+| **图像拼接** | test_image_stitching.py | 图像拼接功能测试 |
+| | test_stitching_consistency.py | 拼接一致性测试 |
+| | test_stitching_fix.py | 拼接修复测试 |
+| **工具位置** | test_tool_position_stability.py | 工具位置稳定性测试 |
+| | test_position_sensitivity.py | 位置敏感性测试 |
+| **相机功能** | test_camera.py | 相机功能测试 |
+| | test_camera_parameter_setting.py | 相机参数设置测试 |
+| | test_camera_connection.py | 相机连接测试 |
+| **YOLO26** | test_yolo26.py | YOLO26功能测试 |
+| | test_yolo26_new.py | YOLO26新功能测试 |
+| **集成测试** | test_integration.py | 系统集成测试 |
+
+### 运行测试
+
+```bash
+# 运行集成测试
+python -m tests.test_integration
+
+# 运行图像拼接测试
+python -m tests.test_image_stitching
+
+# 运行拼接一致性测试
+python -m tests.test_stitching_consistency
+
+# 运行所有测试
+python -m pytest tests/ -v
+```
+
+### 测试结果
+
+```
+✅ 方案文件管理器测试 - PASSED
+✅ 通信模块增强测试 - PASSED  
+✅ 通信监控面板测试 - PASSED
+✅ 图像拼接功能测试 - PASSED
+✅ 工具位置稳定性测试 - PASSED
+🎉 [SUCCESS] 所有案例测试通过！
 ```
 
 ## 🎯 使用示例
@@ -165,7 +210,45 @@ vision_system-opencode/
 文件 → 导出方案包 → 生成完整代码
 ```
 
-### 2. 通信配置示例
+### 2. 图像拼接示例
+
+```python
+from tools.image_stitching import ImageStitchingTool
+from data.image_data import ImageData
+import cv2
+
+# 创建图像拼接工具
+stitcher = ImageStitchingTool()
+
+# 设置参数
+stitcher.set_parameters({
+    "feature_detector": "SIFT",    # 选择特征点检测器
+    "matcher_type": "BFM",        # 选择匹配器类型
+    "blend_method": "multi_band",  # 选择融合方法
+    "blend_strength": 1,           # 融合强度
+    "parallel_processing": False   # 禁用并行处理
+})
+
+# 加载测试图像
+img1 = cv2.imread("A1.jpg")
+img2 = cv2.imread("A2.jpg")
+
+# 创建ImageData对象
+image_data1 = ImageData(data=img1)
+image_data2 = ImageData(data=img2)
+
+# 执行拼接（任意顺序）
+result = stitcher.process([image_data1, image_data2])
+
+# 获取拼接结果
+if result.status:
+    stitched_image = result.get_image("stitched_image")
+    if stitched_image:
+        cv2.imwrite("stitched_result.jpg", stitched_image.data)
+        print(f"拼接成功！输出尺寸: {stitched_image.width}x{stitched_image.height}")
+```
+
+### 3. 通信配置示例
 
 ```python
 # TCP通信配置
@@ -205,19 +288,28 @@ tool_params = {
 }
 ```
 
-### 2. 性能优化
+### 2. 图像拼接技术
+- **任意顺序拼接**: 智能排序，支持任意输入顺序
+- **双向特征匹配**: 提高匹配精度和鲁棒性
+- **智能融合**: 自适应融合强度，根据场景自动调整
+- **镜像检测**: 自动检测和校正镜像问题
+
+
+****注意：目前只测试了两张图片的顺序调换拼接，输出一致的图像，并没测试多张图片****
+
+### 3. 性能优化
 - **向量化计算**: 灰度匹配性能提升10-15倍
 - **图像缓存**: 避免重复处理，提升响应速度
 - **内存管理**: 修复斑点分析、相机模块内存泄漏
 - **QTimer**: 使用Qt定时器实现连续运行，避免线程安全问题
 
-### 3. 设备集成
+### 4. 设备集成
 - **海康MVS SDK**: 完整相机功能支持，包括相机参数设置
 - **相机参数设置**: 支持曝光时间、增益、gamma、分辨率、帧率、触发模式等参数配置
 - **多协议通信**: 工业设备无缝对接
 - **热插拔**: 设备动态识别和管理
 
-### 4. 内存泄漏修复
+### 5. 内存泄漏修复
 - **斑点分析**: 限制blob数量，不存储完整轮廓数据
 - **相机模块**: 共享相机管理器，图像缓冲区复制
 - **结果面板**: 优化数据结构，避免数据累积
@@ -237,6 +329,8 @@ tool_params = {
 - ✅ 修复斑点分析内存泄漏
 - ✅ 修复相机模块内存泄漏
 - ✅ 修复UI布局重复问题
+- ✅ 完善图像拼接功能，支持任意顺序拼接
+- ✅ 优化YOLO26-CPU性能
 
 ### 2026-01-28
 - ✅ 完成核心功能开发

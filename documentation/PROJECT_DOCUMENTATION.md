@@ -2,7 +2,7 @@
 
 > **项目名称**: Vision System (视觉检测系统)  
 > **版本**: v2.0.0 (CPU优化版)  
-> **最后更新**: 2026年1月28日  
+> **最后更新**: 2026年1月29日  
 > **状态**: ✅ 持续开发中
 
 ---
@@ -507,7 +507,7 @@ class MyTool(ROIToolMixin, VisionAlgorithmToolBase):
 
 #### 5.4.1 模块概述
 
-图像拼接工具采用增强型传统方法，解决了位置敏感性问题，支持任意输入顺序的图像拼接。
+图像拼接工具采用增强型传统方法，解决了位置敏感性问题，支持任意输入顺序的图像拼接。该工具通过智能算法自动检测图像间的最佳拼接顺序，确保稳定的拼接结果。
 
 #### 5.4.2 核心算法
 
@@ -518,20 +518,57 @@ class MyTool(ROIToolMixin, VisionAlgorithmToolBase):
 
 2. **特征匹配**
    - 实现双向特征匹配和融合
-   - 支持FLANN和BFM两种匹配器
+   - 支持FLANN（快速）和BFM（精确）两种匹配器
    - 添加互匹配点检查，提高匹配的鲁棒性
+   - 综合考虑匹配点数量和质量（平均距离）来选择最佳匹配方向
 
 3. **图像排序**
    - 使用基于图论的最小生成树（MST）构建最佳拼接路径
    - 采用深度优先搜索（DFS）遍历生成拼接顺序
-   - 自动选择最佳起始图像
+   - 自动选择最佳起始图像（总相似度最高的图像）
 
 4. **图像拼接**
    - 双向单应性矩阵计算，选择最佳对齐方向
    - 支持多图像顺序拼接
    - 实现图像融合和边界裁剪
+   - 自适应融合强度，根据场景自动调整
 
-#### 5.4.3 技术优势
+5. **镜像检测**
+   - 智能检测图像镜像问题
+   - 自动执行水平翻转，校正镜像问题
+   - 基于双向相似度计算，确保检测准确性
+
+#### 5.4.3 技术参数详解
+
+| 参数名称 | 类型 | 默认值 | 范围 | 描述 |
+|---------|------|--------|------|------|
+| feature_detector | 枚举 | SIFT | SIFT, ORB, AKAZE | 选择特征点检测算法 |
+| matcher_type | 枚举 | FLANN | FLANN, BFM | 选择特征点匹配算法 |
+| min_match_count | 整数 | 10 | 1-100 | 进行拼接所需的最小匹配点数 |
+| ransac_reproj_threshold | 浮点 | 4.0 | 0.1-10.0 | RANSAC重投影误差阈值 |
+| blend_method | 枚举 | multi_band | multi_band, feather, none | 选择图像融合算法 |
+| blend_strength | 整数 | 5 | 1-10 | 融合效果的强度，值越大过渡越平滑 |
+| parallel_processing | 布尔 | False | True, False | 是否启用并行计算以提高性能 |
+| max_workers | 整数 | 4 | 1-16 | 并行处理的最大线程数 |
+
+#### 5.4.4 融合强度参数说明
+
+**融合强度（blend_strength）** 是控制图像重叠区域过渡平滑程度的关键参数：
+
+- **低强度（1-3）**：融合过渡区域较窄，图像边界更清晰，适合边缘特征明显的场景
+- **中等强度（4-7）**：融合过渡区域适中，平衡了清晰度和平滑度，适合大多数场景
+- **高强度（8-10）**：融合过渡区域较宽，图像边界更模糊，适合需要无缝过渡的场景
+
+**不同场景的推荐设置**：
+
+| 场景类型 | 特征检测器 | 匹配器类型 | 融合方法 | 融合强度 |
+|---------|-----------|-----------|---------|----------|
+| 特征明显，边缘清晰 | SIFT | BFM | multi_band | 1-3 |
+| 特征适中，光照一致 | SIFT/AKAZE | FLANN | multi_band | 4-7 |
+| 特征模糊，光照差异大 | SIFT | BFM | multi_band | 8-10 |
+| 实时性能要求高 | ORB | FLANN | feather | 3-5 |
+
+#### 5.4.5 技术优势
 
 | 优势 | 描述 |
 |------|------|
@@ -540,19 +577,16 @@ class MyTool(ROIToolMixin, VisionAlgorithmToolBase):
 | 全局优化 | 基于图论的排序算法确保了全局最佳拼接顺序 |
 | 性能均衡 | 平衡了计算复杂度和拼接质量 |
 | 易于集成 | 基于传统计算机视觉方法，无需深度学习依赖 |
+| 参数可调 | 丰富的参数设置，适应不同场景需求 |
+| 镜像校正 | 智能检测和校正镜像问题 |
 
-#### 5.4.4 测试结果
+#### 5.4.6 测试结果
+| 仅对两张图片进行顺序调换拼接，输出一致的图像
 
-| 测试用例 | 输入顺序 | 拼接状态 | 处理时间 | 拼接结果尺寸 |
-|---------|---------|---------|---------|-------------|
-| 测试1 | [image1, image2] | 成功 | 0.24秒 | 954x499 |
-| 测试2 | [image2, image1] | 成功 | 0.21秒 | 952x492 |
-| 测试3.1 | [1, 2, 3] | 成功 | 0.39秒 | 959x500 |
-| 测试3.2 | [3, 2, 1] | 成功 | 0.41秒 | 962x504 |
 
 **总成功率**：100%
 
-#### 5.4.5 使用示例
+#### 5.4.7 使用示例
 
 ```python
 from tools.image_stitching import ImageStitchingTool
@@ -564,31 +598,40 @@ stitcher = ImageStitchingTool()
 
 # 设置参数
 stitcher.set_parameters({
-    "feature_detector": "AKAZE",  # 选择特征点检测器
-    "matcher_type": "FLANN",     # 选择匹配器类型
-    "min_match_count": 10,        # 最小匹配点数
-    "parallel_processing": True   # 启用并行处理
+    "feature_detector": "SIFT",    # 选择特征点检测器
+    "matcher_type": "BFM",        # 选择匹配器类型（BFM更精确）
+    "min_match_count": 10,         # 最小匹配点数
+    "blend_method": "multi_band",  # 选择融合方法
+    "blend_strength": 1,           # 融合强度（根据场景调整）
+    "parallel_processing": False   # 禁用并行处理，确保结果一致
 })
 
 # 加载测试图像
-img1 = cv2.imread("image1.jpg")
-img2 = cv2.imread("image2.jpg")
+img1 = cv2.imread("A1.jpg")
+img2 = cv2.imread("A2.jpg")
 
 # 创建ImageData对象
 image_data1 = ImageData(data=img1)
 image_data2 = ImageData(data=img2)
 
-# 执行拼接
-result = stitcher.process([image_data1, image_data2])
+# 执行拼接（任意顺序）
+result1 = stitcher.process([image_data1, image_data2])  # 顺序1
+result2 = stitcher.process([image_data2, image_data1])  # 顺序2
 
 # 获取拼接结果
-if result.status:
-    stitched_image = result.get_image("stitched_image")
-    if stitched_image:
-        cv2.imwrite("stitched_result.jpg", stitched_image.data)
-        print(f"拼接成功！输出尺寸: {stitched_image.width}x{stitched_image.height}")
-else:
-    print(f"拼接失败: {result.message}")
+if result1.status:
+    stitched_image1 = result1.get_image("stitched_image")
+    if stitched_image1:
+        cv2.imwrite("stitched_result_order1.jpg", stitched_image1.data)
+        print(f"拼接成功（顺序1）！输出尺寸: {stitched_image1.width}x{stitched_image1.height}")
+
+if result2.status:
+    stitched_image2 = result2.get_image("stitched_image")
+    if stitched_image2:
+        cv2.imwrite("stitched_result_order2.jpg", stitched_image2.data)
+        print(f"拼接成功（顺序2）！输出尺寸: {stitched_image2.width}x{stitched_image2.height}")
+
+print("拼接测试完成，两种顺序的结果应该一致")
 ```
 
 ### 5.5 相机参数设置工具
