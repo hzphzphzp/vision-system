@@ -65,7 +65,7 @@ except Exception:
         QGraphicsPixmapItem, QPushButton, QFileDialog, QComboBox, QDialog, QFormLayout,
         QSpinBox, QDoubleSpinBox, QCheckBox, QDialogButtonBox, QLabel,
         QFrame, QScrollArea, QGroupBox, QGridLayout, QSplitterHandle,
-        QMessageBox
+        QMessageBox, QMenu
     )
     from PyQt5.QtGui import QIcon, QKeySequence, QPixmap, QPainter, QPen, QBrush, QColor, QImage, QDrag, QCursor, QFont, QPainterPath
     from PyQt5.QtCore import Qt, QSize, QPointF, QRectF, QMimeData, pyqtSignal, QObject, QLineF, QEvent, QTimer
@@ -540,6 +540,33 @@ class AlgorithmScene(QGraphicsScene):
         if self.tool_clicked_callback:
             self.tool_clicked_callback(tool_item)
     
+    def remove_tool(self, tool_item: 'GraphicsToolItem'):
+        """移除工具
+        
+        Args:
+            tool_item: 要移除的工具图形项
+        """
+        self._logger.info(f"[SCENE] 移除工具: {tool_item.tool.tool_name}")
+        
+        # 移除所有与该工具相关的连线
+        for item in self.items():
+            if isinstance(item, ConnectionLine):
+                if (item.start_port.parent_item == tool_item or 
+                    item.end_port.parent_item == tool_item):
+                    self.removeItem(item)
+        
+        # 移除工具的端口
+        for item in tool_item.childItems():
+            if isinstance(item, PortItem):
+                self.removeItem(item)
+        
+        # 移除工具本身
+        self.removeItem(tool_item)
+        
+        # 通知主窗口工具被删除
+        if hasattr(self.parent(), 'on_tool_deleted'):
+            self.parent().on_tool_deleted(tool_item.tool)
+    
     def start_connection(self, port: PortItem):
         """开始创建连线
         
@@ -717,10 +744,25 @@ class GraphicsToolItem(QGraphicsRectItem):
         
         # 端口
         self._create_ports()
+    
+    def contextMenuEvent(self, event):
+        """右键菜单事件"""
+        menu = QMenu()
         
-        # 初始化文本和端口位置
-        self._update_text_position()
-        self._update_port_positions()
+        # 删除工具动作 - 使用scene作为parent
+        scene = self.scene()
+        delete_action = QAction("删除", scene)
+        delete_action.triggered.connect(self._on_delete_tool)
+        menu.addAction(delete_action)
+        
+        # 显示菜单
+        menu.exec_(event.screenPos())
+    
+    def _on_delete_tool(self):
+        """删除工具"""
+        # 通知场景删除工具
+        if self.scene() and hasattr(self.scene(), 'remove_tool'):
+            self.scene().remove_tool(self)
     
     def itemChange(self, change, value):
         """监听位置变化，更新连线"""
@@ -788,6 +830,9 @@ class GraphicsToolItem(QGraphicsRectItem):
         
         # 初始化端口位置
         self._update_port_positions()
+        
+        # 更新文本位置
+        self._update_text_position()
     
     def _update_text_position(self):
         """更新文本位置"""
@@ -1056,189 +1101,170 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Vision System - 专业视觉检测系统")
         self.resize(1600, 900)
         
-        # 应用现代化主题
-        apply_theme(self, "light")
+        # 应用VisionMaster主题（白色背景黑色字体）
+        apply_theme(self, "vision_master")
         
         # 创建中央部件
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(4, 4, 4, 4)
-        main_layout.setSpacing(4)
+        main_layout.setContentsMargins(2, 2, 2, 2)
+        main_layout.setSpacing(2)
         
         # 创建主分割器（水平分割）
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(main_splitter)
         
-        # 1. 左侧 - 项目浏览器
+        # ========== 1. 左侧 - 工具库和项目浏览器（VisionMaster风格）==========
+        left_container = QWidget()
+        left_layout = QVBoxLayout(left_container)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+        
+        # 创建标签页控件
+        left_tab_widget = QTabWidget()
+        left_tab_widget.setTabPosition(QTabWidget.TabPosition.North)
+        
+        # 工具库标签页
+        tool_lib_widget = QWidget()
+        tool_lib_layout = QVBoxLayout(tool_lib_widget)
+        tool_lib_layout.setContentsMargins(0, 0, 0, 0)
+        tool_lib_layout.setSpacing(0)
+        
+        # 工具库内容 - 直接使用ToolLibraryWidget而不是ToolLibraryDockWidget
+        from ui.tool_library import ToolLibraryWidget
+        self.tool_library_widget = ToolLibraryWidget()
+        tool_lib_layout.addWidget(self.tool_library_widget)
+        
+        left_tab_widget.addTab(tool_lib_widget, "工具库")
+        
+        # 项目浏览器标签页
+        project_widget = QWidget()
+        project_layout = QVBoxLayout(project_widget)
+        project_layout.setContentsMargins(0, 0, 0, 0)
+        project_layout.setSpacing(0)
+        
+        # 项目浏览器内容
         self.project_dock = ProjectBrowserDockWidget(self)
         self.project_dock.set_solution(self.solution)
-        self.project_dock.setMinimumWidth(220)
-        self.project_dock.setMaximumWidth(300)
-        main_splitter.addWidget(self.project_dock)
+        project_layout.addWidget(self.project_dock)
         
-        # 2. 中间面板 - 画幅 + 算法编辑器（上下排列）
+        left_tab_widget.addTab(project_widget, "项目")
+        
+        left_layout.addWidget(left_tab_widget)
+        
+        left_container.setMinimumWidth(200)
+        left_container.setMaximumWidth(280)
+        main_splitter.addWidget(left_container)
+        
+        # ========== 2. 中间 - 算法编辑器 ==========
         middle_container = QWidget()
         middle_layout = QVBoxLayout(middle_container)
         middle_layout.setContentsMargins(0, 0, 0, 0)
-        middle_layout.setSpacing(4)
+        middle_layout.setSpacing(0)
         
-        # 中间垂直分割器
-        middle_splitter = QSplitter(Qt.Orientation.Vertical)
-        middle_layout.addWidget(middle_splitter)
+        # 流程标签栏
+        flow_tab_widget = QWidget()
+        flow_tab_layout = QHBoxLayout(flow_tab_widget)
+        flow_tab_layout.setContentsMargins(4, 4, 4, 4)
+        flow_tab_layout.setSpacing(4)
         
-        # 2.1 上半部分 - 画幅（图像显示）
-        image_container = QWidget()
-        image_layout = QVBoxLayout(image_container)
-        image_layout.setContentsMargins(0, 0, 0, 0)
-        image_layout.setSpacing(2)
-        
-        # 画幅标题标签 - 更专业的设计
-        self.image_label = QLabel("📷 画幅区域")
-        self.image_label.setStyleSheet("""
+        # 流程标签
+        flow_label = QLabel("流程1")
+        flow_label.setStyleSheet("""
             QLabel {
-                background-color: #2c3e50;
-                color: white;
+                background-color: #ff6a00;
+                color: #ffffff;
                 font-weight: bold;
                 font-size: 12px;
-                padding: 6px 10px;
-                border-radius: 3px 3px 0 0;
-                border: none;
+                padding: 6px 16px;
+                border-radius: 3px;
             }
         """)
-        image_layout.addWidget(self.image_label)
+        flow_tab_layout.addWidget(flow_label)
+        flow_tab_layout.addStretch()
         
-        # 画幅视图
-        self.image_scene = QGraphicsScene()
-        self.image_view = ImageView(self.image_scene)
-        self.image_view.setStyleSheet("""
-            QGraphicsView {
-                border: 2px solid #34495e;
-                background-color: #1a1a1a;
-                border-radius: 0 0 3px 3px;
-            }
-            QGraphicsView:hover {
-                border-color: #3498db;
-            }
-        """)
-        image_layout.addWidget(self.image_view)
+        middle_layout.addWidget(flow_tab_widget)
         
-        image_container.setMinimumHeight(280)
-        middle_splitter.addWidget(image_container)
-        
-        # 2.2 下半部分 - 算法编辑器
-        algorithm_container = QWidget()
-        algorithm_layout = QVBoxLayout(algorithm_container)
-        algorithm_layout.setContentsMargins(0, 0, 0, 0)
-        algorithm_layout.setSpacing(2)
-        
-        algorithm_label = QLabel("🔧 算法编辑器")
-        algorithm_label.setStyleSheet("""
-            QLabel {
-                background-color: #2c3e50;
-                color: white;
-                font-weight: bold;
-                font-size: 12px;
-                padding: 6px 10px;
-                border-radius: 3px 3px 0 0;
-                border: none;
-            }
-        """)
-        algorithm_layout.addWidget(algorithm_label)
-        
+        # 算法编辑器
         self.algorithm_scene = AlgorithmScene(self)
         self.algorithm_view = AlgorithmView(self.algorithm_scene)
         self.algorithm_view.setAcceptDrops(True)
         self.algorithm_view.setStyleSheet("""
             QGraphicsView {
-                border: 2px solid #34495e;
-                background-color: #ecf0f1;
-                border-radius: 0 0 3px 3px;
+                border: 1px solid #d4d4d4;
+                background-color: #ffffff;
             }
             QGraphicsView:hover {
-                border-color: #e74c3c;
+                border-color: #ff6a00;
             }
         """)
-        algorithm_layout.addWidget(self.algorithm_view)
-        
-        algorithm_container.setMinimumHeight(180)
-        middle_splitter.addWidget(algorithm_container)
-        
-        # 设置中间分割器比例（画幅:算法编辑器 = 3:5）
-        middle_splitter.setStretchFactor(0, 3)
-        middle_splitter.setStretchFactor(1, 5)
-        middle_splitter.setSizes([300, 500])
+        middle_layout.addWidget(self.algorithm_view)
         
         middle_container.setMinimumWidth(400)
         main_splitter.addWidget(middle_container)
         
-        # 3. 右侧面板组（垂直分割器：工具库、属性面板、结果）
-        right_panel_container = QWidget()
-        right_panel_layout = QVBoxLayout(right_panel_container)
-        right_panel_layout.setContentsMargins(0, 0, 0, 0)
-        right_panel_layout.setSpacing(4)
+        # ========== 3. 右侧 - 图像显示 + 属性面板 + 结果面板 ==========
+        right_container = QWidget()
+        right_layout = QVBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
         
         # 创建右侧垂直分割器
         right_splitter = QSplitter(Qt.Orientation.Vertical)
         
-        # 3.1 工具库
-        self.tool_library_dock = ToolLibraryDockWidget(self)
-        self.tool_library_dock.setMinimumWidth(220)
-        right_splitter.addWidget(self.tool_library_dock)
+        # 3.1 图像显示区域
+        image_tab_widget = QTabWidget()
+        image_tab_widget.setTabPosition(QTabWidget.TabPosition.North)
+        
+        # 图像标签页
+        image_widget = QWidget()
+        image_widget_layout = QVBoxLayout(image_widget)
+        image_widget_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.image_scene = QGraphicsScene()
+        self.image_view = ImageView(self.image_scene)
+        self.image_view.setStyleSheet("""
+            QGraphicsView {
+                border: none;
+                background-color: #f0f0f0;
+            }
+        """)
+        image_widget_layout.addWidget(self.image_view)
+        
+        image_tab_widget.addTab(image_widget, "图像")
+        
+        # 模块结果标签页
+        result_tab = QWidget()
+        image_tab_widget.addTab(result_tab, "模块结果")
+        
+        right_splitter.addWidget(image_tab_widget)
         
         # 3.2 属性面板
         self.property_dock = PropertyDockWidget(self)
-        self.property_dock.setMinimumWidth(220)
         right_splitter.addWidget(self.property_dock)
         
-        # 3.3 结果面板
+        # 3.3 底部结果面板 - 使用EnhancedResultDockWidget
         self.result_dock = EnhancedResultDockWidget(self)
-        self.result_dock.setMinimumWidth(220)
-        self.result_dock.setMinimumHeight(120)
         right_splitter.addWidget(self.result_dock)
         
-        # 监听数据连接请求
-        self.result_dock.data_connection_requested.connect(self._on_data_connection_requested)
-        
-        # 设置右侧分割器比例（工具库:属性:结果 = 2:2:1）
-        right_splitter.setStretchFactor(0, 2)
-        right_splitter.setStretchFactor(1, 2)
+        # 设置右侧分割器比例 - 结果面板更小，图像和属性占据主要空间
+        # 图像:属性:结果 = 5:4:1 (总共10份，结果只占1/10)
+        right_splitter.setStretchFactor(0, 5)
+        right_splitter.setStretchFactor(1, 4)
         right_splitter.setStretchFactor(2, 1)
-        right_splitter.setSizes([250, 250, 125])
+        right_splitter.setSizes([500, 400, 100])
         
-        right_panel_layout.addWidget(right_splitter)
+        right_layout.addWidget(right_splitter)
         
-        right_panel_container.setMinimumWidth(220)
-        main_splitter.addWidget(right_panel_container)
+        right_container.setMinimumWidth(350)
+        main_splitter.addWidget(right_container)
         
-        # 设置主分割器比例（项目浏览器:中间:右侧 = 1:4:2）
+        # 设置主分割器比例（左侧:中间:右侧 = 1:3:2）
         main_splitter.setStretchFactor(0, 1)
-        main_splitter.setStretchFactor(1, 4)
+        main_splitter.setStretchFactor(1, 3)
         main_splitter.setStretchFactor(2, 2)
-        main_splitter.setSizes([220, 800, 330])
-        
-        # 添加样式优化
-        main_splitter.setStyleSheet("""
-            QSplitter {
-                background-color: #f5f5f5;
-                border: none;
-            }
-            QSplitter::handle {
-                background-color: #e0e0e0;
-                border: none;
-            }
-            QSplitter::handle:hover {
-                background-color: #bdc3c7;
-            }
-            QSplitter::handle:horizontal {
-                width: 5px;
-            }
-            QSplitter::handle:vertical {
-                height: 5px;
-            }
-        """)
-        middle_splitter.setStyleSheet(main_splitter.styleSheet())
-        right_splitter.setStyleSheet(main_splitter.styleSheet())
+        main_splitter.setSizes([220, 700, 400])
         
         # 创建菜单栏
         self._create_menu_bar()
@@ -1345,20 +1371,20 @@ class MainWindow(QMainWindow):
 
         
     def _create_tool_bar(self):
-        """创建工具栏"""
+        """创建工具栏 - VisionMaster风格"""
         toolbar = QToolBar("工具栏")
         self.addToolBar(toolbar)
         
-        # 工具栏样式
+        # 工具栏样式 - 白色背景黑色字体
         toolbar.setStyleSheet("""
             QToolBar {
-                background-color: #f8f9fa;
-                border-bottom: 1px solid #e0e0e0;
-                spacing: 8px;
+                background-color: #f5f5f5;
+                border-bottom: 1px solid #d4d4d4;
+                spacing: 6px;
                 padding: 4px 8px;
             }
             QToolBar::separator {
-                background-color: #e0e0e0;
+                background-color: #d4d4d4;
                 width: 1px;
                 height: 20px;
                 margin: 0 4px;
@@ -1366,22 +1392,22 @@ class MainWindow(QMainWindow):
             QToolButton {
                 background-color: transparent;
                 border: 1px solid transparent;
-                border-radius: 4px;
-                padding: 6px 10px;
-                color: #2c3e50;
+                border-radius: 3px;
+                padding: 5px 8px;
+                color: #000000;
                 font-size: 12px;
-                font-weight: 500;
             }
             QToolButton:hover {
-                background-color: #e3f2fd;
-                border-color: #bbdefb;
+                background-color: #e3e3e3;
+                border-color: #d4d4d4;
             }
             QToolButton:pressed {
-                background-color: #bbdefb;
+                background-color: #d4d4d4;
             }
             QToolButton:checked {
-                background-color: #bbdefb;
-                border-color: #2196f3;
+                background-color: #ff6a00;
+                border-color: #ff6a00;
+                color: #ffffff;
             }
         """)
         
@@ -1447,13 +1473,13 @@ class MainWindow(QMainWindow):
         self.zoom_label = QLabel("100%")
         self.zoom_label.setStyleSheet("""
             QLabel {
-                color: #2c3e50;
-                background-color: #e8f4f8;
-                padding: 6px 12px;
-                border-radius: 4px;
+                color: #000000;
+                background-color: #ffffff;
+                padding: 5px 10px;
+                border-radius: 3px;
                 font-weight: bold;
-                border: 1px solid #bbdefb;
-                min-width: 60px;
+                border: 1px solid #d4d4d4;
+                min-width: 50px;
                 text-align: center;
             }
         """)
@@ -1524,8 +1550,8 @@ class MainWindow(QMainWindow):
         """热重载回调函数"""
         try:
             # 刷新工具库
-            if hasattr(self, 'tool_library_dock'):
-                self.tool_library_dock.refresh()
+            if hasattr(self, 'tool_library_widget'):
+                self.tool_library_widget.refresh()
             
             # 刷新属性面板
             if hasattr(self, 'property_dock') and self.property_dock.current_tool:
@@ -1540,6 +1566,29 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._logger.error(f"热重载回调执行失败: {e}")
     
+    def keyPressEvent(self, event):
+        """键盘按键事件"""
+        # 处理Delete键删除选中的工具
+        if event.key() == Qt.Key.Key_Delete:
+            self._delete_selected_tools()
+        
+        super().keyPressEvent(event)
+    
+    def _delete_selected_tools(self):
+        """删除选中的工具"""
+        if not self.algorithm_scene:
+            return
+        
+        # 获取选中的工具
+        selected_items = self.algorithm_scene.selectedItems()
+        tool_items = [item for item in selected_items if isinstance(item, GraphicsToolItem)]
+        
+        for tool_item in tool_items:
+            self._logger.info(f"[MAIN] 删除选中的工具: {tool_item.tool.tool_name}")
+            # 调用场景的remove_tool方法
+            if hasattr(self.algorithm_scene, 'remove_tool'):
+                self.algorithm_scene.remove_tool(tool_item)
+    
     def closeEvent(self, event):
         """关闭窗口事件"""
         # 停止热重载
@@ -1551,21 +1600,22 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
     
     def _create_status_bar(self):
-        """创建状态栏"""
+        """创建状态栏 - VisionMaster风格"""
         status_bar = QStatusBar()
         self.setStatusBar(status_bar)
         
-        # 状态栏样式
+        # 状态栏样式 - 白色背景黑色字体
         status_bar.setStyleSheet("""
             QStatusBar {
-                background-color: #f8f9fa;
-                border-top: 1px solid #e0e0e0;
-                color: #2c3e50;
+                background-color: #f5f5f5;
+                border-top: 1px solid #d4d4d4;
+                color: #000000;
                 font-size: 12px;
                 padding: 4px 8px;
             }
             QStatusBar QLabel {
                 margin-right: 15px;
+                color: #000000;
             }
         """)
         
@@ -1650,10 +1700,10 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         """连接信号"""
         # 工具库工具拖拽信号
-        self.tool_library_dock.get_tool_library().tool_drag_started.connect(self._on_tool_drag_started)
+        self.tool_library_widget.tool_drag_started.connect(self._on_tool_drag_started)
         
         # 工具库工具点击信号
-        self.tool_library_dock.get_tool_library().tool_clicked.connect(self._on_tool_library_clicked)
+        self.tool_library_widget.tool_clicked.connect(self._on_tool_library_clicked)
         
         # 项目浏览器信号
         self.project_dock.item_double_clicked.connect(self._on_project_item_double_clicked)
@@ -1695,6 +1745,30 @@ class MainWindow(QMainWindow):
         except (RuntimeError, AttributeError) as e:
             # 处理场景已删除的情况
             self._logger.debug(f"选择变化事件异常（可能是场景已删除）: {e}")
+    
+    def on_tool_deleted(self, tool: ToolBase):
+        """工具被删除事件
+        
+        Args:
+            tool: 被删除的工具实例
+        """
+        self._logger.info(f"[MAIN] 工具被删除: {tool.tool_name}")
+        
+        # 从当前流程中移除工具
+        if self.current_procedure:
+            try:
+                self.current_procedure.remove_tool(tool)
+                self._logger.info(f"[MAIN] 从流程中移除工具: {tool.tool_name}")
+            except Exception as e:
+                self._logger.error(f"[MAIN] 从流程中移除工具失败: {e}")
+        
+        # 清除属性面板
+        if self.property_dock:
+            self.property_dock.clear_properties()
+        
+        # 刷新项目浏览器
+        if hasattr(self, 'project_dock') and self.project_dock:
+            self.project_dock.refresh()
     
     def _on_tool_drag_started(self, category: str, name: str, display_name: str):
         """工具拖拽开始事件"""
@@ -2204,7 +2278,7 @@ class MainWindow(QMainWindow):
         self._logger.debug(f"查找工具数据，工具名称: {tool_name}")
         
         # 从新的工具库获取工具数据
-        tool_data = self.tool_library_dock.get_tool_library().get_tool_data(tool_name)
+        tool_data = self.tool_library_widget.get_tool_data(tool_name)
         
         if tool_data is None:
             self._logger.error(f"未找到工具数据: {tool_name}")
@@ -2375,8 +2449,9 @@ class MainWindow(QMainWindow):
         self.current_display_image = image_data
         self.current_display_tool_name = tool_name
         
-        # 清除场景
-        self.image_scene.clear()
+        # 清除场景 - QGraphicsItem没有deleteLater，使用removeItem
+        for item in list(self.image_scene.items()):
+            self.image_scene.removeItem(item)
         
         # 获取图像数据
         if image_data.is_valid:
@@ -2417,50 +2492,22 @@ class MainWindow(QMainWindow):
             # 添加到场景
             self.image_scene.addItem(container)
             
-            # 创建图像项
+            # 创建图像项 - 使用原始图像大小
             pixmap_item = QGraphicsPixmapItem(pixmap)
             pixmap_item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
             pixmap_item.setZValue(-1)
             
-            # 计算合适的显示尺寸（保持原图比例，最大适应视图的90%）
-            view_size = self.image_view.viewport().size()
-            max_display_width = int(view_size.width() * 0.9)
-            max_display_height = int(view_size.height() * 0.9)
-            
-            display_size = pixmap.size()
-            display_size.scale(
-                max_display_width,
-                max_display_height,
-                Qt.AspectRatioMode.KeepAspectRatio
-            )
-            
-            # 调整图像大小
-            scaled_pixmap = pixmap.scaled(
-                display_size,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            pixmap_item.setPixmap(scaled_pixmap)
-            
             # 添加到场景并居中
             self.image_scene.addItem(pixmap_item)
             
-            # 调整容器大小以适应图像
+            # 调整容器大小以适应原始图像
             container_rect = QRectF(pixmap_item.boundingRect())
             container_rect.adjust(-10, -10, 10, 10)  # 添加10px边距
             container.setRect(container_rect)
             
-            # 计算居中位置
-            scene_rect = self.image_scene.sceneRect()
-            container_center = scene_rect.center()
-            container_offset = QPointF(
-                container_center.x() - container_rect.width() / 2,
-                container_center.y() - container_rect.height() / 2
-            )
-            
-            # 移动容器和图像
-            container.setPos(container_offset)
-            pixmap_item.setPos(container_offset.x() + 10, container_offset.y() + 10)
+            # 将容器和图像放在场景原点
+            container.setPos(0, 0)
+            pixmap_item.setPos(10, 10)
             
             # 添加图像信息文本
             info_text = f"{tool_name} | {w}×{h} | {c}通道"
@@ -2471,12 +2518,24 @@ class MainWindow(QMainWindow):
             # 计算文本位置（图像下方居中）
             text_rect = text_item.boundingRect()
             text_pos = QPointF(
-                container_offset.x() + container_rect.width() / 2 - text_rect.width() / 2,
-                container_offset.y() + container_rect.height() + 5
+                container_rect.width() / 2 - text_rect.width() / 2,
+                container_rect.height() + 5
             )
             text_item.setPos(text_pos)
             text_item.setZValue(1)
             self.image_scene.addItem(text_item)
+            
+            # 调整视图以适应图像并居中
+            self.image_view.setSceneRect(container.boundingRect().adjusted(-20, -20, 100, 50))
+            self.image_view.fitInView(container, Qt.AspectRatioMode.KeepAspectRatio)
+            self.image_view.centerOn(container)
+            
+            # 同步缩放值
+            if hasattr(self.image_view, 'update_zoom_from_transform'):
+                self.image_view.update_zoom_from_transform()
+            
+            # 强制刷新视图
+            self.image_view.viewport().update()
             
             self._logger.info(f"[MAIN] 显示图像: {tool_name}, 分辨率: {w}x{h}")
         else:
@@ -2909,6 +2968,12 @@ class MainWindow(QMainWindow):
             if execution_order:
                 last_tool = execution_order[-1]
                 output = last_tool.get_output("OutputImage")
+                
+                # 调试日志
+                self._logger.info(f"[RUN] 检查最后一个工具 {last_tool.tool_name} 的输出: {output}")
+                if output:
+                    self._logger.info(f"[RUN] 输出数据有效性: {output.is_valid}")
+                
                 if output and output.is_valid:
                     self._logger.info(f"[RUN] 自动显示 {last_tool.tool_name} 的输出图像")
                     self._display_image(output, last_tool.tool_name)
@@ -2926,8 +2991,12 @@ class MainWindow(QMainWindow):
                     """)
                 else:
                     # 如果最后一个工具没有输出，尝试找第一个有输出的工具
+                    self._logger.info(f"[RUN] 最后一个工具没有有效输出，查找其他工具...")
                     for tool in execution_order:
                         output = tool.get_output("OutputImage")
+                        self._logger.info(f"[RUN] 检查工具 {tool.tool_name} 的输出: {output}")
+                        if output:
+                            self._logger.info(f"[RUN] 输出数据有效性: {output.is_valid}")
                         if output and output.is_valid:
                             self._logger.info(f"[RUN] 自动显示 {tool.tool_name} 的输出图像")
                             self._display_image(output, tool.tool_name)
@@ -3038,15 +3107,55 @@ class MainWindow(QMainWindow):
         return None
     
     def run_continuous(self):
-        """连续运行"""
-        self.solution.run_interval = 1000
-        self.solution.runing()
+        """连续运行 - 按模块连接关系传递图像数据"""
+        if not self.solution.procedures:
+            self.update_status("没有可执行的流程")
+            return
+        
+        if not self.current_procedure:
+            self.update_status("请先选择一个流程")
+            return
+        
+        if hasattr(self, '_continuous_running') and self._continuous_running:
+            self.update_status("已经在连续运行中")
+            return
+        
+        self._continuous_running = True
         self.update_status("连续运行中...")
+        
+        # 使用QTimer实现连续运行，避免线程安全问题
+        self._continuous_timer = QTimer(self)
+        self._continuous_timer.timeout.connect(self._on_continuous_timer)
+        self._continuous_timer.start(1000)  # 1秒间隔
+        
+        # 立即执行第一次
+        self._on_continuous_timer()
+    
+    def _on_continuous_timer(self):
+        """连续运行定时器回调"""
+        if not self._continuous_running:
+            return
+        
+        try:
+            # 执行单次运行
+            self.run_once()
+        except Exception as e:
+            self._logger.error(f"连续运行出错: {e}")
     
     def stop_run(self):
         """停止运行"""
-        self.solution.stop_run()
-        self.update_status("已停止")
+        if not hasattr(self, '_continuous_running') or not self._continuous_running:
+            self.update_status("未在连续运行")
+            return
+        
+        self._continuous_running = False
+        
+        # 停止定时器
+        if hasattr(self, '_continuous_timer'):
+            self._continuous_timer.stop()
+            delattr(self, '_continuous_timer')
+        
+        self.update_status("连续运行已停止")
     
     def _show_results(self, results: dict):
         """显示结果"""

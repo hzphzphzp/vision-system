@@ -24,7 +24,7 @@ from ui.enhanced_result_panel import (
     DataType
 )
 from ui.enhanced_result_dock import EnhancedResultDockWidget
-from ui.theme import get_style, apply_theme, MODERN_STYLE, DARK_STYLE
+from ui.theme import get_style, apply_theme, VISION_MASTER_STYLE
 
 __all__ = [
     "MainWindow",
@@ -45,6 +45,5 @@ __all__ = [
     "EnhancedResultDockWidget",
     "get_style",
     "apply_theme",
-    "MODERN_STYLE",
-    "DARK_STYLE"
+    "VISION_MASTER_STYLE"
 ]

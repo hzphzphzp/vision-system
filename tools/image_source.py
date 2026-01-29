@@ -74,6 +74,8 @@ class CameraSource(ImageSourceToolBase):
     tool_category = "ImageSource"
     tool_description = "从相机采集图像"
     
+    _shared_camera_manager = None  # 共享的相机管理器
+    
     def __init__(self, name: str = None):
         super().__init__(name)
         # 初始化相机相关属性
@@ -81,6 +83,14 @@ class CameraSource(ImageSourceToolBase):
         self._camera_manager = None
         self._is_initialized = False
         self._user_disconnected = False  # 标记用户是否主动关闭了相机
+    
+    @classmethod
+    def _get_shared_camera_manager(cls):
+        """获取共享的相机管理器"""
+        if cls._shared_camera_manager is None:
+            from modules.camera_manager import CameraManager
+            cls._shared_camera_manager = CameraManager()
+        return cls._shared_camera_manager
     
     def _init_params(self):
         """初始化默认参数"""
@@ -110,13 +120,10 @@ class CameraSource(ImageSourceToolBase):
             return True
         
         try:
-            from modules.camera_manager import CameraManager
-            
             trigger_mode = self.get_param("trigger_mode", "continuous")
             
-            # 初始化相机管理器
-            if not self._camera_manager:
-                self._camera_manager = CameraManager()
+            # 使用共享的相机管理器
+            self._camera_manager = self._get_shared_camera_manager()
             
             # 使用传入的final_camera_id或从参数获取
             camera_id = final_camera_id or self.get_param("camera_id", "0")
@@ -171,10 +178,8 @@ class CameraSource(ImageSourceToolBase):
             
             self._logger.info(f"开始采集图像: camera_id={final_camera_id}, trigger_mode={trigger_mode}")
             
-            # 初始化相机管理器
-            if not self._camera_manager:
-                from modules.camera_manager import CameraManager
-                self._camera_manager = CameraManager()
+            # 使用共享的相机管理器
+            self._camera_manager = self._get_shared_camera_manager()
             
             # 优先使用已连接的相机
             self._camera = self._camera_manager.get_camera(final_camera_id)

@@ -11,7 +11,7 @@ import tempfile
 import shutil
 
 # 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_solution_file_manager():
     """测试方案文件管理器"""

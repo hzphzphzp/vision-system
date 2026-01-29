@@ -211,8 +211,10 @@ class BlobFind(VisionAlgorithmToolBase):
         # 创建输出图像
         output = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR) if len(input_image.shape) == 2 else input_image.copy()
         
-        # 分析每个轮廓
+        # 分析每个轮廓 - 设置最大数量限制以避免内存问题
+        max_blobs = 1000  # 最多保留1000个斑点
         blobs = []
+        blob_count = 0
         for i, contour in enumerate(contours):
             # 计算面积
             area = cv2.contourArea(contour)
@@ -253,21 +255,27 @@ class BlobFind(VisionAlgorithmToolBase):
             # 计算最小外接圆
             (cx_circle, cy_circle), radius = cv2.minEnclosingCircle(contour)
             
-            # 保存斑点信息
+            # 保存斑点信息 - 只存储必要的信息，不存储完整轮廓以避免内存泄漏
             blob = {
                 "id": i,
-                "area": area,
-                "x": x,
-                "y": y,
-                "width": w,
-                "height": h,
-                "aspect_ratio": aspect_ratio,
-                "circularity": circularity,
-                "cx": cx,
-                "cy": cy,
-                "contour": contour
+                "area": float(area),
+                "x": int(x),
+                "y": int(y),
+                "width": int(w),
+                "height": int(h),
+                "aspect_ratio": float(aspect_ratio),
+                "circularity": float(circularity) if circularity else 0.0,
+                "cx": int(cx),
+                "cy": int(cy)
+                # 不保存 "contour": contour，避免内存泄漏
             }
             blobs.append(blob)
+            blob_count += 1
+            
+            # 达到最大数量后停止保存
+            if blob_count >= max_blobs:
+                self._logger.warning(f"斑点数量已达到最大限制 {max_blobs}，停止保存")
+                break
             
             # 绘制结果
             if draw_contours:

@@ -362,7 +362,8 @@ class HikCamera:
             
             pData = cast(stOutFrame.pBufAddr, POINTER(c_ubyte))
             
-            temp = np.ctypeslib.as_array(pData, shape=(frame_len,))
+            # 创建numpy数组的副本，避免原始缓冲区被释放后访问无效内存
+            temp = np.ctypeslib.as_array(pData, shape=(frame_len,)).copy()
             image = temp.reshape((height, width))
             
             self._camera.MV_CC_FreeImageBuffer(stOutFrame)

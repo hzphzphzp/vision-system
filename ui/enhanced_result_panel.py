@@ -195,11 +195,19 @@ class ResultDetailWidget(QWidget):
         blobs = result_data.get_value("blobs", [])
         
         if isinstance(blobs, list) and blobs:
-            for i, blob in enumerate(blobs[:10]):  # 最多显示10个
+            # 只显示前10个blob，避免UI卡顿
+            display_blobs = blobs[:10]
+            total_count = len(blobs)
+            
+            # 如果有更多blob，显示总数
+            if total_count > 10:
+                self._add_info_label(f"共检测到 {total_count} 个斑点，显示前10个")
+            
+            for i, blob in enumerate(display_blobs):
                 self._add_result_group(f"Blob {i+1}", [
                     ("面积", f"{blob.get('area', 0):.2f}"),
                     ("中心", f"({blob.get('cx', blob.get('center_x', 'N/A'))}, {blob.get('cy', blob.get('center_y', 'N/A'))})"),
-                    ("周长", f"{blob.get('perimeter', 0):.2f}"),
+                    ("周长", f"{blob.get('perimeter', 0):.2f}" if blob.get('perimeter') else "N/A"),
                     ("圆度", f"{blob.get('circularity', 0):.4f}" if blob.get('circularity') else "N/A")
                 ])
         else:
@@ -607,76 +615,14 @@ class EnhancedResultPanel(QWidget):
         
         layout.addLayout(filter_layout)
         
-        # 结果列表
-        self.result_list = QListWidget()
-        self.result_list.setAlternatingRowColors(True)
-        self.result_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.result_list.itemSelectionChanged.connect(self._on_result_selected)
-        self.result_list.setMinimumHeight(100)
-        layout.addWidget(self.result_list)
-        
-        # 分隔线
-        separator2 = QFrame()
-        separator2.setFrameShape(QFrame.HLine)
-        separator2.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(separator2)
-        
-        # 数据连接和结果详情区域
-        detail_widget = QWidget()
-        detail_layout = QVBoxLayout(detail_widget)
-        detail_layout.setContentsMargins(8, 5, 5, 5)
-        detail_layout.setSpacing(8)
-        
-        connection_title = QLabel("🔗 数据连接")
-        connection_title.setFont(QFont("Arial", 11, QFont.Bold))
-        detail_layout.addWidget(connection_title)
-        
-        self.data_btn = QPushButton("+ 选择要使用的数据...")
-        self.data_btn.setMinimumHeight(35)
-        self.data_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                border-radius: 6px;
-                font-size: 12px;
-                text-align: left;
-                padding-left: 15px;
-            }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
-        """)
-        self.data_btn.clicked.connect(self._show_data_selector)
-        detail_layout.addWidget(self.data_btn)
-        
-        self.data_label = QLabel("未选择数据")
-        self.data_label.setStyleSheet("color: #666; font-style: italic;")
-        self.data_label.setWordWrap(True)
-        detail_layout.addWidget(self.data_label)
-        
-        detail_layout.addStretch()
-        
-        detail_title = QLabel("📋 结果详情")
-        detail_title.setFont(QFont("Arial", 11, QFont.Bold))
-        detail_layout.addWidget(detail_title)
-        
-        self.detail_tabs = QTabWidget()
-        self.detail_tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #ddd;
-                background-color: white;
-            }
-        """)
-        
-        self.detail_widget = ResultDetailWidget()
-        self.detail_tabs.addTab(self.detail_widget, "📋 详情")
-        
-        self.viz_widget = ResultVisualizationWidget()
-        self.detail_tabs.addTab(self.viz_widget, "📈 可视化")
-        
-        detail_layout.addWidget(self.detail_tabs)
-        
-        layout.addWidget(detail_widget)
+        # 结果列表 - 使用树形控件，可以展开显示详情
+        self.result_tree = QTreeWidget()
+        self.result_tree.setHeaderHidden(True)
+        self.result_tree.setAlternatingRowColors(True)
+        self.result_tree.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.result_tree.itemClicked.connect(self._on_tree_item_clicked)
+        self.result_tree.setMinimumHeight(150)
+        layout.addWidget(self.result_tree)
         
         # 状态栏
         status_layout = QHBoxLayout()
@@ -721,17 +667,18 @@ class EnhancedResultPanel(QWidget):
         self._update_result_list()
         self._update_available_modules()
         
-        # 自动选择最新的结果并显示详情
-        if self.result_list.count() > 0:
-            self.result_list.setCurrentRow(0)  # 选择最新的结果（在列表顶部）
-            self._on_result_selected()
+        # 自动选择最新的结果
+        if self.result_tree.topLevelItemCount() > 0:
+            first_item = self.result_tree.topLevelItem(0)
+            if first_item:
+                self.result_tree.setCurrentItem(first_item)
     
     def _update_result_list(self):
         """更新结果列表"""
         filter_category = self.category_combo.currentData()
         search_text = self.search_edit.text().lower()
         
-        self.result_list.clear()
+        self.result_tree.clear()
         
         for result_data, category, timestamp in reversed(self._results):
             # 过滤
@@ -742,7 +689,7 @@ class EnhancedResultPanel(QWidget):
             if search_text and search_text not in tool_name.lower():
                 continue
             
-            # 创建列表项
+            # 创建树形项
             time_str = datetime.fromtimestamp(timestamp).strftime("%H:%M:%S")
             
             icon = "✅" if result_data.status else "❌"
@@ -751,14 +698,63 @@ class EnhancedResultPanel(QWidget):
                 "blob": "🔵", "ocr": "📝", "": "📋"
             }.get(category, "📋")
             
-            text = f"{time_str} {icon} {category_icon} {tool_name}"
+            # 创建父项（工具名称）
+            parent_text = f"{time_str} {icon} {category_icon} {tool_name}"
+            parent_item = QTreeWidgetItem([parent_text])
+            parent_item.setData(0, Qt.UserRole, (result_data, category))
             
-            item = QListWidgetItem(text)
-            item.setData(Qt.UserRole, (result_data, category))
+            # 添加关键结果作为子项
+            self._add_result_details(parent_item, result_data, category)
             
-            self.result_list.addItem(item)
+            self.result_tree.addTopLevelItem(parent_item)
         
         self.count_label.setText(f"{len(self._results)} 条结果")
+    
+    def _add_result_details(self, parent_item: QTreeWidgetItem, result_data: ResultData, category: str):
+        """添加结果详情作为子项"""
+        if category in ["barcode", "qrcode", "code"]:
+            codes = result_data.get_value("codes", [])
+            if isinstance(codes, list) and codes:
+                for i, code in enumerate(codes[:5]):  # 最多显示5个
+                    data = code.get("data", "")[:20]
+                    child = QTreeWidgetItem([f"  码 {i+1}: {data}"])
+                    parent_item.addChild(child)
+        elif category == "detection":
+            detections = result_data.get_value("detections", [])
+            if isinstance(detections, list) and detections:
+                for i, det in enumerate(detections[:5]):
+                    name = det.get("class_name", det.get("name", "未知"))
+                    conf = det.get("confidence", 0)
+                    child = QTreeWidgetItem([f"  目标 {i+1}: {name} ({conf*100:.1f}%)"])
+                    parent_item.addChild(child)
+        elif category in ["blob", "shape"]:
+            blobs = result_data.get_value("blobs", [])
+            if isinstance(blobs, list) and blobs:
+                for i, blob in enumerate(blobs[:5]):
+                    area = blob.get("area", 0)
+                    child = QTreeWidgetItem([f"  Blob {i+1}: 面积={area:.2f}"])
+                    parent_item.addChild(child)
+        elif category == "match":
+            score = result_data.get_value("score", 0)
+            matched = result_data.get_value("matched", False)
+            child = QTreeWidgetItem([f"  匹配{'成功' if matched else '失败'}: 相似度={score*100:.2f}%"])
+            parent_item.addChild(child)
+        elif category == "ocr":
+            texts = result_data.get_value("texts", [])
+            if isinstance(texts, list) and texts:
+                for i, item in enumerate(texts[:5]):
+                    if isinstance(item, dict):
+                        text = item.get("text", "")[:20]
+                        child = QTreeWidgetItem([f"  文本 {i+1}: {text}"])
+                        parent_item.addChild(child)
+        else:
+            # 通用结果显示
+            values = result_data.get_all_values()
+            for key, value in list(values.items())[:5]:
+                if key not in ["message", "status"]:
+                    display_value = str(value)[:30]
+                    child = QTreeWidgetItem([f"  {key}: {display_value}"])
+                    parent_item.addChild(child)
     
     def _update_available_modules(self):
         """更新可用模块列表"""
@@ -778,16 +774,19 @@ class EnhancedResultPanel(QWidget):
         for selector in self.data_selectors:
             selector.set_available_modules(self._available_modules)
     
-    def _on_result_selected(self, *args):
-        """结果选择事件"""
-        item = self.result_list.currentItem()
-        if item:
-            result_data, category = item.data(Qt.UserRole)
-            
-            self.detail_widget.set_result(result_data, category)
-            self.viz_widget.set_result(result_data, category)
-            
+    def _on_tree_item_clicked(self, item: QTreeWidgetItem, column: int):
+        """树形项点击事件"""
+        # 获取父项的数据（如果是子项，获取其父项）
+        parent_item = item.parent() if item.parent() else item
+        data = parent_item.data(0, Qt.UserRole)
+        
+        if data:
+            result_data, category = data
             self.result_selected.emit(result_data, category)
+            
+            # 切换展开/折叠状态
+            if item.childCount() > 0:
+                item.setExpanded(not item.isExpanded())
     
     def _on_filter_changed(self):
         """过滤条件变化"""
@@ -911,9 +910,6 @@ class EnhancedResultPanel(QWidget):
                     DataType.UNKNOWN: "❓"
                 }.get(data_type, "📦")
                 
-                self.data_label.setText(f"{type_icon} {module_name}.{key}")
-                self.data_label.setStyleSheet("color: #059669; font-weight: bold; font-size: 12px;")
-                
                 self.data_connection_requested.emit(module_name, key, data_type)
     
     def _show_export_dialog(self):
@@ -1007,10 +1003,6 @@ class EnhancedResultPanel(QWidget):
         """清空结果"""
         self._results.clear()
         self._update_result_list()
-        self.detail_widget.set_result(None)
-        self.viz_widget.set_result(None)
-        self.data_label.setText("未选择数据")
-        self.data_label.setStyleSheet("color: #666; font-style: italic;")
     
     def set_available_modules(self, modules: Dict[str, Dict[str, DataType]]):
         """设置可用模块数据
@@ -1019,14 +1011,6 @@ class EnhancedResultPanel(QWidget):
             modules: {模块名: {键名: DataType}}
         """
         self._available_modules = modules
-        
-        if modules:
-            count = sum(len(m) for m in modules.values())
-            self.data_label.setText(f"已加载 {len(modules)} 个模块，{count} 个数据项")
-            self.data_label.setStyleSheet("color: #059669; font-weight: bold; font-size: 11px;")
-        else:
-            self.data_label.setText("暂无可用数据，请先运行工具")
-            self.data_label.setStyleSheet("color: #dc2626; font-size: 11px;")
     
     def get_results(self) -> List[Tuple[ResultData, str, float]]:
         """获取所有结果"""

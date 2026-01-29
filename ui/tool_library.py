@@ -93,33 +93,33 @@ class ToolLibraryListWidget(QListWidget):
         self.setDragEnabled(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setViewMode(QListWidget.ViewMode.ListMode)
-        self.setSpacing(4)
+        self.setSpacing(2)
         self.setStyleSheet("""
             QListWidget {
                 background-color: #ffffff;
-                border: 1px solid #e0e0e0;
-                border-radius: 4px;
-                padding: 6px;
+                border: none;
+                padding: 4px;
             }
             QListWidget::item {
-                background-color: white;
+                background-color: #ffffff;
                 border: 1px solid transparent;
-                border-radius: 3px;
-                padding: 10px;
-                margin-bottom: 2px;
+                border-radius: 2px;
+                padding: 8px 10px;
+                margin: 1px;
+                color: #000000;
             }
             QListWidget::item:selected {
-                background-color: #3498db;
-                color: white;
-                border-color: #2980b9;
+                background-color: #e3e3e3;
+                color: #000000;
+                border-color: #d4d4d4;
             }
             QListWidget::item:hover {
-                background-color: #f8f9fa;
-                border-color: #bdc3c7;
+                background-color: #f5f5f5;
+                border-color: #d4d4d4;
             }
             QListWidget::item:selected:hover {
-                background-color: #2980b9;
-                border-color: #2980b9;
+                background-color: #d4d4d4;
+                border-color: #c0c0c0;
             }
         """)
         
@@ -177,7 +177,12 @@ class ToolLibraryListWidget(QListWidget):
         drag.setPixmap(pixmap)
         drag.setHotSpot(QPoint(10, rect.height() // 2))
         
-        drag.exec(supportedActions)
+        # PyQt5使用exec_()而不是exec()
+        try:
+            drag.exec_(supportedActions)
+        except AttributeError:
+            # PyQt6使用exec()
+            drag.exec(supportedActions)
 
 
 class ToolLibraryWidget(QWidget):
@@ -198,100 +203,76 @@ class ToolLibraryWidget(QWidget):
         self._update_tool_list()
     
     def _init_ui(self):
-        """初始化UI组件"""
+        """初始化UI组件 - VisionMaster风格"""
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(4, 4, 4, 4)
-        main_layout.setSpacing(4)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        # 标题栏
-        title_container = QWidget()
-        title_layout = QHBoxLayout(title_container)
-        title_layout.setContentsMargins(0, 0, 0, 0)
-        title_layout.setSpacing(6)
-        
-        title_icon = QLabel("🧰")
-        title_icon.setStyleSheet("font-size: 14px;")
-        title_layout.addWidget(title_icon)
-        
-        title_label = QLabel("工具库")
-        title_label.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
-        title_label.setStyleSheet("color: #2c3e50;")
-        title_layout.addWidget(title_label)
-        
-        title_layout.addStretch()
-        
-        # 搜索框容器
+        # 搜索框
         search_container = QWidget()
+        search_container.setStyleSheet("background-color: #ffffff; border-bottom: 1px solid #d4d4d4;")
         search_layout = QHBoxLayout(search_container)
-        search_layout.setContentsMargins(0, 0, 0, 0)
-        search_layout.setSpacing(4)
+        search_layout.setContentsMargins(8, 6, 8, 6)
+        search_layout.setSpacing(6)
         
         search_icon = QLabel("🔍")
-        search_icon.setStyleSheet("font-size: 10px;")
+        search_icon.setStyleSheet("font-size: 11px; color: #606060;")
         search_layout.addWidget(search_icon)
         
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("搜索工具...")
-        self.search_edit.setFixedWidth(120)
         self.search_edit.setStyleSheet("""
             QLineEdit {
-                border: 1px solid #bdc3c7;
-                border-radius: 12px;
-                padding: 3px 8px;
-                background-color: #f8f9fa;
+                border: 1px solid #d4d4d4;
+                border-radius: 3px;
+                padding: 4px 8px;
+                background-color: #ffffff;
                 font-size: 11px;
-                color: #2c3e50;
+                color: #000000;
             }
             QLineEdit:focus {
-                border-color: #3498db;
-                background-color: white;
+                border-color: #ff6a00;
             }
             QLineEdit::placeholder {
-                color: #95a5a6;
+                color: #909090;
             }
         """)
         self.search_edit.textChanged.connect(self._on_search_text_changed)
         search_layout.addWidget(self.search_edit)
         
-        title_layout.addWidget(search_container)
-        main_layout.addWidget(title_container)
-        
-        # 分隔线
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setStyleSheet("border: none; border-bottom: 1px solid #e0e0e0; margin: 2px 0;")
-        main_layout.addWidget(separator)
+        main_layout.addWidget(search_container)
         
         # 工具分类树和工具列表
         content_splitter = QSplitter(Qt.Horizontal)
         
-        # 分类树
+        # 分类树 - VisionMaster风格
         self.category_tree = QTreeWidget()
         self.category_tree.setHeaderLabels(["分类"])
         self.category_tree.setColumnWidth(0, 100)
         self.category_tree.setStyleSheet("""
             QTreeWidget {
                 border: none;
-                background-color: transparent;
-                font-size: 11px;
+                background-color: #ffffff;
+                font-size: 12px;
             }
             QTreeWidget::item {
-                padding: 4px 8px;
-                border-radius: 3px;
+                padding: 6px 8px;
+                border-radius: 2px;
                 margin: 1px 0;
+                color: #000000;
             }
             QTreeWidget::item:selected {
-                background-color: #3498db;
-                color: white;
+                background-color: #e3e3e3;
+                color: #000000;
             }
             QTreeWidget::item:hover {
-                background-color: #ecf0f1;
+                background-color: #f5f5f5;
             }
             QTreeWidget::branch:closed:has-children {
-                image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAADFJREFUOE9jZGBgYJCc8Z+BFAASYKSiAWrBqAHDQAygGw4m00D04GEwDOMH0TAg6GEwDOMH0TAg6GEwDAMArlYEvbTLxXoAAAAASUVORK5CYII=);
+                image: none;
             }
             QTreeWidget::branch:open:has-children {
-                image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAADFJREFUOE9jZGBgYJCc8Z+BFAASYKSiAWrBqAHDQAygGw4m00D04GEwDOMH0TAg6GEwDOMH0TAg6GEwDAMArlYEvbTLxXoAAAAASUVORK5CYII=);
+                image: none;
             }
         """)
         self.category_tree.itemClicked.connect(self._on_category_clicked)
@@ -304,27 +285,28 @@ class ToolLibraryWidget(QWidget):
         content_splitter.setSizes([90, 180])
         main_layout.addWidget(content_splitter, 1)
         
-        # 工具描述区域
+        # 工具描述区域 - VisionMaster风格
         desc_container = QWidget()
+        desc_container.setStyleSheet("background-color: #ffffff; border-top: 1px solid #d4d4d4;")
         desc_layout = QVBoxLayout(desc_container)
-        desc_layout.setContentsMargins(6, 6, 6, 6)
-        desc_layout.setSpacing(4)
+        desc_layout.setContentsMargins(8, 8, 8, 8)
+        desc_layout.setSpacing(6)
         
         desc_header = QLabel("工具信息")
-        desc_header.setFont(QFont("Microsoft YaHei", 9, QFont.Bold))
-        desc_header.setStyleSheet("color: #7f8c8d;")
+        desc_header.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
+        desc_header.setStyleSheet("color: #000000;")
         desc_layout.addWidget(desc_header)
         
         self.description_label = QLabel("选择工具查看详细信息")
         self.description_label.setWordWrap(True)
         self.description_label.setStyleSheet("""
             QLabel {
-                background-color: #f8f9fa;
-                border: 1px solid #e9ecef;
-                border-radius: 4px;
+                background-color: #f5f5f5;
+                border: 1px solid #d4d4d4;
+                border-radius: 3px;
                 padding: 8px;
-                font-size: 10px;
-                color: #495057;
+                font-size: 11px;
+                color: #000000;
                 min-height: 40px;
             }
         """)
@@ -340,18 +322,18 @@ class ToolLibraryWidget(QWidget):
         # 转发信号
         self.tool_clicked.emit(category, name, display_name)
         
-        # 更新描述标签
+        # 更新描述标签 - VisionMaster风格
         tool_data = self.get_tool_data(display_name)
         if tool_data:
             self.description_label.setText(f"📝 {tool_data.description}")
             self.description_label.setStyleSheet("""
                 QLabel {
-                    background-color: #e3f2fd;
-                    border: 1px solid #2196F3;
-                    border-radius: 4px;
+                    background-color: #fff3e0;
+                    border: 1px solid #ff6a00;
+                    border-radius: 3px;
                     padding: 10px;
                     font-size: 11px;
-                    color: #1565C0;
+                    color: #000000;
                 }
             """)
     
@@ -465,6 +447,15 @@ class ToolLibraryWidget(QWidget):
     def get_all_tools(self) -> List[ToolItemData]:
         """获取所有工具数据"""
         return self._tool_data_list.copy()
+    
+    def refresh(self):
+        """刷新工具库"""
+        # 重新加载工具
+        self._load_tools()
+        # 更新工具列表显示
+        self._update_tool_list()
+        # 刷新分类树
+        self._setup_category_tree()
 
 
 class ToolLibraryDockWidget(QDockWidget):

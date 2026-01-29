@@ -893,24 +893,31 @@ class PropertyPanelWidget(QWidget):
             widget: 参数编辑器控件
             param_name: 参数名称
         """
+        # 使用functools.partial避免lambda导致的引用循环
+        from functools import partial
+        
         if isinstance(widget, QLineEdit):
-            widget.textChanged.connect(lambda value: self._on_parameter_changed(param_name, value))
+            widget.textChanged.connect(partial(self._on_parameter_changed, param_name))
         elif isinstance(widget, QSpinBox):
-            widget.valueChanged.connect(lambda value: self._on_parameter_changed(param_name, value))
+            widget.valueChanged.connect(partial(self._on_parameter_changed, param_name))
         elif isinstance(widget, QDoubleSpinBox):
-            widget.valueChanged.connect(lambda value: self._on_parameter_changed(param_name, value))
+            widget.valueChanged.connect(partial(self._on_parameter_changed, param_name))
         elif isinstance(widget, QCheckBox):
-            widget.stateChanged.connect(lambda state: self._on_parameter_changed(param_name, bool(state)))
+            widget.stateChanged.connect(partial(self._on_checkbox_changed, param_name))
         elif isinstance(widget, QComboBox):
-            widget.currentTextChanged.connect(lambda text: self._on_parameter_changed(param_name, text))
+            widget.currentTextChanged.connect(partial(self._on_parameter_changed, param_name))
         elif isinstance(widget, FilePathSelector):
             # 文件路径选择器连接信号
-            widget.path_edit.textChanged.connect(lambda value: self._on_parameter_changed(param_name, value))
+            widget.path_edit.textChanged.connect(partial(self._on_parameter_changed, param_name))
         elif isinstance(widget, ROISelectButton):
             # ROI选择器连接信号
-            widget.roi_changed.connect(lambda roi_data: self._on_parameter_changed(param_name, roi_data))
+            widget.roi_changed.connect(partial(self._on_parameter_changed, param_name))
             # ROI点击信号需要外部处理，连接到主窗口
-            widget.roi_clicked.connect(lambda pname: self._on_roi_select_clicked(pname))
+            widget.roi_clicked.connect(partial(self._on_roi_select_clicked, param_name))
+    
+    def _on_checkbox_changed(self, param_name: str, state: int):
+        """复选框状态变更处理"""
+        self._on_parameter_changed(param_name, bool(state))
     
     def _on_parameter_changed(self, param_name: str, value: Any):
         """参数变更事件

@@ -145,9 +145,19 @@ class ZoomableGraphicsView(QGraphicsView):
             self._zoom = 1.0
             self.zoom_changed.emit(self._zoom)
     
+    def update_zoom_from_transform(self):
+        """从当前变换矩阵更新缩放值"""
+        transform = self.transform()
+        self._zoom = transform.m11()  # 假设均匀缩放
+        self.zoom_changed.emit(self._zoom)
+        self._logger.debug(f"[ZoomableGraphicsView] 从变换更新缩放: {self._zoom:.2f}")
+    
     def set_image_pixmap(self, pixmap: QPixmap):
         """设置图像（QPixmap格式）"""
-        self.scene().clear()
+        # 显式删除旧的pixmap_item - QGraphicsItem使用removeItem
+        if self._pixmap_item:
+            self.scene().removeItem(self._pixmap_item)
+            self._pixmap_item = None
         
         if pixmap.isNull():
             self._logger.warning("[ZoomableGraphicsView] 无效的QPixmap")
