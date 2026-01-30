@@ -7,6 +7,7 @@
 import os
 import sys
 import time
+
 import cv2
 import numpy as np
 
@@ -24,13 +25,13 @@ model_files = []
 if os.path.exists(model_dir):
     print(f"✓ 模型目录存在: {model_dir}")
     for f in os.listdir(model_dir):
-        if f.endswith('.pt'):
+        if f.endswith(".pt"):
             model_files.append(f)
-    
+
     print(f"✓ 发现 {len(model_files)} 个模型文件:")
     for f in model_files:
         full_path = os.path.join(model_dir, f)
-        size_mb = os.path.getsize(full_path) / (1024*1024)
+        size_mb = os.path.getsize(full_path) / (1024 * 1024)
         print(f"   - {f} ({size_mb:.1f} MB)")
 else:
     print(f"✗ 模型目录不存在: {model_dir}")
@@ -40,6 +41,7 @@ else:
 print("\n2. 检查Ultralytics安装...")
 try:
     from ultralytics import YOLO
+
     print("✓ Ultralytics安装成功")
     YOLO_AVAILABLE = True
 except ImportError as e:
@@ -60,6 +62,7 @@ else:
     if not os.path.exists(test_image):
         try:
             import urllib.request
+
             url = "https://ultralytics.com/images/bus.jpg"
             urllib.request.urlretrieve(url, test_image)
             print(f"✓ 已下载测试图片: {test_image}")
@@ -81,26 +84,26 @@ print("\n5. 测试模型推理...")
 for model_file in model_files:
     model_path = os.path.join(model_dir, model_file)
     print(f"\n=== 测试模型: {model_file} ===")
-    
+
     if YOLO_AVAILABLE:
         try:
             # 加载模型
             model = YOLO(model_path)
             print(f"✓ 模型加载成功: {model_file}")
-            
+
             # 执行推理
             start_time = time.time()
             results = model.predict(source=image, save=True, save_txt=True)
             inference_time = (time.time() - start_time) * 1000
-            
+
             print(f"✓ 推理完成，耗时: {inference_time:.2f}ms")
-            
+
             # 显示结果
             if len(results) > 0:
                 boxes = results[0].boxes
                 if boxes is not None:
                     print(f"✓ 发现 {len(boxes)} 个目标")
-                    
+
                     # 绘制检测框
                     annotated_image = results[0].plot()
                     result_file = f"result_{model_file[:-3]}.jpg"
@@ -111,6 +114,7 @@ for model_file in model_files:
         except Exception as e:
             print(f"✗ 模型测试失败: {e}")
             import traceback
+
             traceback.print_exc()
 
 # 6. 测试YOLO26CPUDetector
@@ -118,21 +122,21 @@ print("\n6. 测试YOLO26CPUDetector...")
 
 try:
     from modules.cpu_optimization.models.yolo26_cpu import YOLO26CPUDetector
-    
+
     # 创建检测器
     detector = YOLO26CPUDetector()
-    
+
     # 测试第一个模型
     first_model = model_files[0]
     model_path = os.path.join(model_dir, first_model)
-    
+
     print(f"\n测试 {first_model}...")
     if detector.load_model(model_path):
         print(f"✓ 检测器加载模型成功")
-        
+
         # 检测
         result = detector.detect(image)
-        
+
         if "error" in result:
             print(f"✗ 检测失败: {result['error']}")
         else:
@@ -142,6 +146,7 @@ try:
 except Exception as e:
     print(f"✗ YOLO26CPUDetector测试失败: {e}")
     import traceback
+
     traceback.print_exc()
 
 print("\n" + "=" * 60)

@@ -7,6 +7,7 @@ YOLO26功能测试 - 使用新模块
 import os
 import sys
 import time
+
 import cv2
 import numpy as np
 
@@ -38,7 +39,7 @@ model_loaded = False
 model_paths = [
     "E:/yolo26n.pt",
     "D:/ultralytics-main/runs/detect/train/weights/best.pt",
-    "models/yolo26n.pt"
+    "data/models/yolo26n.pt",
 ]
 
 for model_path in model_paths:
@@ -76,33 +77,44 @@ if "error" in result:
     print(f"✗ 检测失败: {result['error']}")
 else:
     print(f"✓ 发现 {result['detection_count']} 个目标")
-    
+
     # 显示检测结果
-    for i, det in enumerate(result['detections'][:10]):
-        print(f"  目标{i+1}: {det['class_name']}, 置信度: {det['confidence']:.2f}")
-        bbox = det['bbox']
-        print(f"         位置: ({bbox['x1']:.2f}, {bbox['y1']:.2f}) - ({bbox['x2']:.2f}, {bbox['y2']:.2f})")
-    
+    for i, det in enumerate(result["detections"][:10]):
+        print(
+            f"  目标{i+1}: {det['class_name']}, 置信度: {det['confidence']:.2f}"
+        )
+        bbox = det["bbox"]
+        print(
+            f"         位置: ({bbox['x1']:.2f}, {bbox['y1']:.2f}) - ({bbox['x2']:.2f}, {bbox['y2']:.2f})"
+        )
+
     # 在图片上绘制检测框
     output_image = image.copy()
-    for det in result['detections']:
-        bbox = det['bbox']
-        x1 = int(bbox['x1'] * output_image.shape[1])
-        y1 = int(bbox['y1'] * output_image.shape[0])
-        x2 = int(bbox['x2'] * output_image.shape[1])
-        y2 = int(bbox['y2'] * output_image.shape[0])
-        
+    for det in result["detections"]:
+        bbox = det["bbox"]
+        x1 = int(bbox["x1"] * output_image.shape[1])
+        y1 = int(bbox["y1"] * output_image.shape[0])
+        x2 = int(bbox["x2"] * output_image.shape[1])
+        y2 = int(bbox["y2"] * output_image.shape[0])
+
         # 随机颜色
         color = tuple(np.random.randint(0, 255, 3).tolist())
-        
+
         # 绘制边界框
         cv2.rectangle(output_image, (x1, y1), (x2, y2), color, 2)
-        
+
         # 绘制标签
         label = f"{det['class_name']}: {det['confidence']:.2f}"
-        cv2.putText(output_image, label, (x1, y1 - 10),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-    
+        cv2.putText(
+            output_image,
+            label,
+            (x1, y1 - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            color,
+            2,
+        )
+
     # 保存结果
     output_path = "runs/detect/predict/test_result.jpg"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

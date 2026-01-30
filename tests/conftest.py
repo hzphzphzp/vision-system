@@ -6,10 +6,11 @@
 用于配置pytest测试框架，包括环境初始化、夹具(fixtures)定义等。
 """
 
-import sys
 import os
-import pytest
+import sys
+
 import numpy as np
+import pytest
 
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -42,8 +43,9 @@ def invalid_image():
 @pytest.fixture
 def tool_registry():
     """获取工具注册表，用于测试工具创建"""
-    from core.tool_base import ToolRegistry
     import tools  # 导入所有工具模块
+    from core.tool_base import ToolRegistry
+
     return ToolRegistry
 
 
@@ -51,6 +53,7 @@ def tool_registry():
 def sample_procedure():
     """创建一个示例流程，用于测试流程功能"""
     from core.procedure import Procedure
+
     return Procedure("测试流程")
 
 
@@ -58,4 +61,5 @@ def sample_procedure():
 def sample_solution():
     """创建一个示例方案，用于测试方案功能"""
     from core.solution import Solution
+
     return Solution("测试方案")

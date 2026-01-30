@@ -7,6 +7,7 @@ YOLO26简单测试脚本
 import os
 import sys
 import time
+
 import cv2
 import numpy as np
 
@@ -18,6 +19,7 @@ print("=" * 60)
 print("\n1. 检查Ultralytics安装...")
 try:
     from ultralytics import YOLO
+
     print("✓ Ultralytics安装成功")
     YOLO_AVAILABLE = True
 except ImportError as e:
@@ -28,6 +30,7 @@ except ImportError as e:
 print("\n2. 检查PyTorch安装...")
 try:
     import torch
+
     print(f"✓ PyTorch安装成功: {torch.__version__}")
     PYTORCH_AVAILABLE = True
 except ImportError as e:
@@ -38,13 +41,14 @@ except ImportError as e:
 print("\n3. 准备测试环境...")
 
 # 测试图片路径
-test_image = "test_image.jpg"
+test_image = "data/images/test_image.jpg"
 
 # 如果没有测试图片，下载一个
 if not os.path.exists(test_image):
     print(f"✗ 测试图片不存在，下载一个...")
     try:
         import urllib.request
+
         url = "https://ultralytics.com/images/bus.jpg"
         urllib.request.urlretrieve(url, test_image)
         print(f"✓ 测试图片已下载: {test_image}")
@@ -68,38 +72,38 @@ if YOLO_AVAILABLE:
     try:
         # 尝试使用默认模型（会自动下载）
         print("\n尝试使用yolo26n模型...")
-        model = YOLO("yolo26n.pt")
-        
+        model = YOLO("data/models/yolo26n.pt")
+
         # 执行推理
         start_time = time.time()
         results = model.predict(source=image, save=True, save_txt=True)
         inference_time = (time.time() - start_time) * 1000
-        
+
         print(f"\n✓ 推理完成，耗时: {inference_time:.2f}ms")
-        
+
         # 显示结果
         if len(results) > 0:
             boxes = results[0].boxes
             if boxes is not None:
                 print(f"✓ 发现 {len(boxes)} 个目标")
-                
+
                 # 绘制检测框
                 annotated_image = results[0].plot()
-                cv2.imwrite("result.jpg", annotated_image)
-                print(f"✓ 结果已保存到: result.jpg")
+                cv2.imwrite("data/test_results/result.jpg", annotated_image)
+                print(f"✓ 结果已保存到: data/test_results/result.jpg")
             else:
                 print("✗ 未发现目标")
     except Exception as e:
         print(f"✗ 推理失败: {e}")
         print("\n尝试直接使用PyTorch模型...")
-        
+
         # 简单的PyTorch模型测试
         if PYTORCH_AVAILABLE:
             # 创建一个简单的模型
             class SimpleModel(torch.nn.Module):
                 def forward(self, x):
                     return torch.rand(1, 100, 6)  # 模拟输出
-            
+
             model = SimpleModel()
             input_tensor = torch.rand(1, 3, 640, 640)
             output = model(input_tensor)

@@ -10,7 +10,7 @@
 Usage:
     # SDK路径测试
     python test_camera.py
-    
+
     # 完整功能测试
     python tests/test_camera.py
 """
@@ -22,8 +22,14 @@ if mvimport_path not in sys.path:
     sys.path.append(mvimport_path)
 
 try:
-    from MvCameraControl_class import MvCamera, MV_CC_DEVICE_INFO_LIST, MV_GIGE_DEVICE, MV_USB_DEVICE
-    from ctypes import byref, sizeof, pointer
+    from ctypes import byref, pointer, sizeof
+
+    from MvCameraControl_class import (
+        MV_CC_DEVICE_INFO_LIST,
+        MV_GIGE_DEVICE,
+        MV_USB_DEVICE,
+        MvCamera,
+    )
 
     print("初始化SDK...")
     ret = MvCamera.MV_CC_Initialize()
@@ -32,7 +38,9 @@ try:
     print("\n开始枚举设备...")
     deviceList = MV_CC_DEVICE_INFO_LIST()
     stDeviceList = pointer(deviceList)
-    ret = MvCamera.MV_CC_EnumDevices(MV_GIGE_DEVICE | MV_USB_DEVICE, stDeviceList)
+    ret = MvCamera.MV_CC_EnumDevices(
+        MV_GIGE_DEVICE | MV_USB_DEVICE, stDeviceList
+    )
     print(f"枚举结果: 0x{ret:x}")
     print(f"发现设备数量: {deviceList.nDeviceNum}")
 
@@ -41,11 +49,19 @@ try:
         for i in range(deviceList.nDeviceNum):
             device_info = deviceList.pDeviceInfo[i]
             if device_info.nTLayerType == MV_GIGE_DEVICE:
-                model_name = device_info.SpecialInfo.stGigEInfo.chModelName.decode('utf-8').rstrip('\x00')
+                model_name = (
+                    device_info.SpecialInfo.stGigEInfo.chModelName.decode(
+                        "utf-8"
+                    ).rstrip("\x00")
+                )
                 ip = device_info.SpecialInfo.stGigEInfo.chCurrentIp
                 print(f"  [{i}] GigE: {model_name} @ {ip}")
             elif device_info.nTLayerType == MV_USB_DEVICE:
-                model_name = device_info.SpecialInfo.stUsb3VInfo.chModelName.decode('utf-8').rstrip('\x00')
+                model_name = (
+                    device_info.SpecialInfo.stUsb3VInfo.chModelName.decode(
+                        "utf-8"
+                    ).rstrip("\x00")
+                )
                 print(f"  [{i}] USB: {model_name}")
     else:
         print("\n未发现任何设备!")

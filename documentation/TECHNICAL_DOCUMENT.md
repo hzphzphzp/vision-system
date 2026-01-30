@@ -10,13 +10,13 @@
 - **目标系统**: Python + PyQt5 + OpenCV
 - **开发环境**: Python 3.7+, PyQt5, OpenCV, NumPy
 
-### 1.3 最新更新 (2026-01-29)
-- ✅ 优化结果面板布局（图像:属性:结果 = 5:4:1）
-- ✅ 简化结果面板UI，使用树形结构显示
-- ✅ 修复连续运行线程安全问题（使用QTimer）
-- ✅ 修复斑点分析内存泄漏
-- ✅ 修复相机模块内存泄漏
-- ✅ 修复UI布局重复问题
+### 1.3 最新更新 (2026-01-30)
+- ✅ 完成代码复用与模块化优化
+- ✅ 创建图像处理工具函数库 (utils/image_processing_utils.py)
+- ✅ 优化相机模块目录结构 (modules/camera/)
+- ✅ 重构工具模块为子包结构 (vision/communication/analysis)
+- ✅ 修复相机软触发失败问题，增加重试机制
+- ✅ 更新所有相关文档，反映代码结构变化
 
 ## 2. 系统架构设计
 
@@ -822,20 +822,45 @@ vision_system/
 ├── tools/
 │   ├── __init__.py
 │   ├── image_source.py     # 图像源
-│   ├── image_filter.py     # 图像滤波
-│   ├── analysis.py         # 分析工具
-│   ├── template_match.py   # 模板匹配
-│   ├── blob_find.py        # 斑点分析
-│   ├── measurement.py      # 测量工具
-│   └── ...
+│   ├── camera_parameter_setting.py # 相机参数设置
+│   ├── vision/             # 视觉工具子包
+│   │   ├── __init__.py
+│   │   ├── template_match.py   # 模板匹配
+│   │   ├── appearance_detection.py # 外观检测
+│   │   ├── cpu_optimization.py # CPU优化
+│   │   ├── image_filter.py     # 图像滤波
+│   │   ├── image_stitching.py  # 图像拼接
+│   │   ├── ocr.py              # OCR
+│   │   └── recognition.py      # 识别
+│   ├── communication/      # 通信工具子包
+│   │   ├── __init__.py
+│   │   └── communication.py    # 通信工具
+│   └── analysis/           # 分析工具子包
+│       ├── __init__.py
+│       └── analysis.py         # 分析工具
 ├── modules/
-│   ├── camera_manager.py   # 相机管理
-│   ├── basler_camera.py    # Basler相机支持
-│   └── ...
+│   ├── cpu_optimization/   # CPU优化模块
+│   │   ├── core/
+│   │   ├── models/
+│   │   ├── api/
+│   │   └── utils/
+│   ├── camera/             # 相机模块
+│   │   ├── __init__.py
+│   │   ├── camera_manager.py   # 相机管理
+│   │   ├── camera_adapter.py   # 相机适配器
+│   │   └── basler_camera.py     # Basler相机
 ├── data/
 │   ├── image_data.py       # 图像数据类
 │   ├── result_data.py      # 结果数据类
 │   └── roi.py              # ROI类
+├── utils/
+│   ├── error_management.py      # 错误管理
+│   ├── error_recovery.py        # 错误恢复
+│   ├── exceptions.py            # 异常定义
+│   ├── hot_reload.py            # 热重载
+│   ├── image_processing_utils.py # 图像处理工具函数库
+│   ├── image_filter_utils.py    # 图像滤波工具
+│   └── performance_optimization.py # 性能优化
 └── config/
     └── config.yaml         # 配置文件
 ```

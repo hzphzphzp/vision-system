@@ -9,13 +9,14 @@ Author: Vision System Team
 Date: 2026-01-27
 """
 
-import time
-import cv2
-import numpy as np
 import os
 import pickle
-from typing import List, Dict, Any, Optional, Tuple
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
 
 from core.tool_base import ToolBase, ToolRegistry
 from data.image_data import ImageData, ResultData
@@ -213,14 +214,21 @@ class ImageStitchingTool(ToolBase):
                     index_params = dict(
                         algorithm=FLANN_INDEX_KDTREE, trees=8
                     )  # 增加树数量，提升匹配精度
-                    search_params = dict(checks=100)  # 增加检查次数，提升匹配精度
+                    search_params = dict(
+                        checks=100
+                    )  # 增加检查次数，提升匹配精度
                     return cv2.FlannBasedMatcher(index_params, search_params)
                 else:
                     # ORB and AKAZE use different FLANN parameters
                     index_params = dict(
-                        algorithm=6, table_number=6, key_size=12, multi_probe_level=1
+                        algorithm=6,
+                        table_number=6,
+                        key_size=12,
+                        multi_probe_level=1,
                     )
-                    search_params = dict(checks=100)  # 增加检查次数，提升匹配精度
+                    search_params = dict(
+                        checks=100
+                    )  # 增加检查次数，提升匹配精度
                     return cv2.FlannBasedMatcher(index_params, search_params)
             except Exception:
                 # 降级到BFM匹配器
@@ -233,42 +241,46 @@ class ImageStitchingTool(ToolBase):
                 return cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
             else:
                 return cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
-    
+
     def _load_persistent_params(self):
         """
         加载持久化参数
         """
         try:
-            params_file = os.path.join(os.path.dirname(__file__), "stitching_params.pkl")
+            params_file = os.path.join(
+                os.path.dirname(__file__), "stitching_params.pkl"
+            )
             if os.path.exists(params_file):
-                with open(params_file, 'rb') as f:
+                with open(params_file, "rb") as f:
                     saved_params = pickle.load(f)
                     self._params.update(saved_params)
                     self._logger.info(f"加载持久化参数成功: {saved_params}")
         except Exception as e:
             self._logger.warning(f"加载持久化参数失败: {e}")
-    
+
     def _save_persistent_params(self):
         """
         保存持久化参数
         """
         try:
-            params_file = os.path.join(os.path.dirname(__file__), "stitching_params.pkl")
+            params_file = os.path.join(
+                os.path.dirname(__file__), "stitching_params.pkl"
+            )
             # 确保目录存在
             os.makedirs(os.path.dirname(params_file), exist_ok=True)
-            with open(params_file, 'wb') as f:
+            with open(params_file, "wb") as f:
                 pickle.dump(self._params, f)
                 self._logger.info(f"保存持久化参数成功: {self._params}")
         except Exception as e:
             self._logger.warning(f"保存持久化参数失败: {e}")
-    
+
     def _calculate_image_hash(self, image: ImageData) -> str:
         """
         计算图像的哈希值，用于缓存
-        
+
         Args:
             image: 图像数据
-            
+
         Returns:
             图像哈希值
         """
@@ -278,60 +290,64 @@ class ImageStitchingTool(ToolBase):
                 gray = cv2.cvtColor(image.data, cv2.COLOR_BGR2GRAY)
             else:
                 gray = image.data
-            
+
             # 缩小图像尺寸
             resized = cv2.resize(gray, (32, 32))
-            
+
             # 计算平均值
             mean = np.mean(resized)
-            
+
             # 计算哈希值
-            hash_value = "".join(['1' if pixel > mean else '0' for pixel in resized.flatten()])
-            
+            hash_value = "".join(
+                ["1" if pixel > mean else "0" for pixel in resized.flatten()]
+            )
+
             # 转换为十六进制
             hex_hash = hex(int(hash_value, 2))[2:]
             return hex_hash
         except Exception as e:
             self._logger.warning(f"计算图像哈希失败: {e}")
             return str(hash(image.data.tobytes()))
-    
+
     def _calculate_input_hash(self, input_data: List[ImageData]) -> str:
         """
         计算输入数据的哈希值，用于缓存
-        
+
         Args:
             input_data: 输入图像列表
-            
+
         Returns:
             输入数据哈希值
         """
         try:
             # 计算每张图像的哈希值
-            image_hashes = [self._calculate_image_hash(img) for img in input_data]
-            
+            image_hashes = [
+                self._calculate_image_hash(img) for img in input_data
+            ]
+
             # 排序哈希值，确保顺序不影响结果
             image_hashes.sort()
-            
+
             # 组合哈希值
             combined_hash = "_".join(image_hashes)
-            
+
             # 添加参数哈希
             params_hash = str(hash(str(self._params)))
-            
+
             # 最终哈希值
             final_hash = combined_hash + "_" + params_hash
             return final_hash
         except Exception as e:
             self._logger.warning(f"计算输入哈希失败: {e}")
             return str(hash(str(input_data)))
-    
+
     def _get_cache_key(self, input_data: List[ImageData]) -> str:
         """
         获取缓存键
-        
+
         Args:
             input_data: 输入图像列表
-            
+
         Returns:
             缓存键
         """
@@ -369,7 +385,9 @@ class ImageStitchingTool(ToolBase):
 
             # 记录输入图像信息
             input_sizes = [f"{img.width}x{img.height}" for img in input_data]
-            self._logger.info(f"开始处理 {len(input_data)} 张图像: {input_sizes}")
+            self._logger.info(
+                f"开始处理 {len(input_data)} 张图像: {input_sizes}"
+            )
 
             # 建立图像尺寸一致性验证机制
             self._logger.info("步骤0: 图像尺寸一致性验证")
@@ -389,7 +407,9 @@ class ImageStitchingTool(ToolBase):
             features = self._detect_and_match_features(input_data)
 
             # 检查特征点检测结果
-            valid_features = [f for f in features if f["descriptors"] is not None]
+            valid_features = [
+                f for f in features if f["descriptors"] is not None
+            ]
             self._logger.info(
                 f"特征点检测完成: 有效特征={len(valid_features)}/{len(features)}"
             )
@@ -403,7 +423,9 @@ class ImageStitchingTool(ToolBase):
 
             # 3. 图像拼接
             self._logger.info("步骤3: 图像拼接")
-            stitched_image = self._stitch_images(sorted_images, sorted_features)
+            stitched_image = self._stitch_images(
+                sorted_images, sorted_features
+            )
 
             # 4. 记录处理时间
             processing_time = time.time() - start_time
@@ -415,7 +437,9 @@ class ImageStitchingTool(ToolBase):
                 and stitched_image.height > 0
             ):
                 result.status = True
-                result.message = f"图像拼接成功，处理时间: {processing_time:.2f}秒"
+                result.message = (
+                    f"图像拼接成功，处理时间: {processing_time:.2f}秒"
+                )
                 result.set_value("processing_time", processing_time)
                 result.set_value("input_images_count", len(input_data))
                 result.set_value("stitched_width", stitched_image.width)
@@ -424,7 +448,7 @@ class ImageStitchingTool(ToolBase):
                 self._logger.info(
                     f"拼接成功! 输出尺寸: {stitched_image.width}x{stitched_image.height}, 处理时间: {processing_time:.2f}秒"
                 )
-                
+
                 # 保存到缓存
                 self._result_cache[cache_key] = result
                 self._logger.info(f"结果已缓存: {cache_key}")
@@ -453,7 +477,7 @@ class ImageStitchingTool(ToolBase):
             self._logger.error(f"拼接过程发生异常: {e}", exc_info=True)
 
         return result
-    
+
     def set_parameters(self, params: Dict[str, Any]):
         """
         设置工具参数
@@ -468,10 +492,10 @@ class ImageStitchingTool(ToolBase):
         # 更新特征点检测器和匹配器
         self._detector = self._create_feature_detector()
         self._matcher = self._create_matcher()
-        
+
         # 保存持久化参数
         self._save_persistent_params()
-        
+
         # 清空缓存
         self._result_cache.clear()
         self._logger.info("参数已更新，缓存已清空")
@@ -507,7 +531,9 @@ class ImageStitchingTool(ToolBase):
                         features.append(img_features)
                     except Exception as e:
                         # 如果并行处理失败，使用串行处理
-                        features = [self._detect_features(img) for img in images]
+                        features = [
+                            self._detect_features(img) for img in images
+                        ]
                         break
         else:
             # 串行处理
@@ -554,22 +580,30 @@ class ImageStitchingTool(ToolBase):
             # 确保图像数据类型正确
             if gray_data.dtype != np.uint8:
                 gray_data = gray_data.astype(np.uint8)
-            
+
             # 对于SIFT/SURF/AKAZE
-            keypoints, descriptors = self._detector.detectAndCompute(gray_data, None)
+            keypoints, descriptors = self._detector.detectAndCompute(
+                gray_data, None
+            )
             self._logger.info(f"检测到 {len(keypoints)} 个特征点")
         except ValueError:
             # 对于ORB，可能返回不同的格式
             keypoints = self._detector.detect(gray_data, None)
-            keypoints, descriptors = self._detector.compute(gray_data, keypoints)
+            keypoints, descriptors = self._detector.compute(
+                gray_data, keypoints
+            )
             self._logger.info(f"检测到 {len(keypoints)} 个特征点 (ORB格式)")
         except Exception as e:
             # 其他错误，返回空值
             self._logger.error(f"特征点检测失败: {e}")
             keypoints, descriptors = [], None
 
-        return {"keypoints": keypoints, "descriptors": descriptors, "image": image}
-    
+        return {
+            "keypoints": keypoints,
+            "descriptors": descriptors,
+            "image": image,
+        }
+
     def _match_features(
         self, features1: Dict[str, Any], features2: Dict[str, Any]
     ) -> List:
@@ -583,7 +617,10 @@ class ImageStitchingTool(ToolBase):
         Returns:
             匹配点列表
         """
-        if features1["descriptors"] is None or features2["descriptors"] is None:
+        if (
+            features1["descriptors"] is None
+            or features2["descriptors"] is None
+        ):
             self._logger.debug("特征点描述符为空，无法匹配")
             return []
 
@@ -598,7 +635,9 @@ class ImageStitchingTool(ToolBase):
         # 检查描述符形状
         desc1_shape = desc1.shape if hasattr(desc1, "shape") else "未知"
         desc2_shape = desc2.shape if hasattr(desc2, "shape") else "未知"
-        self._logger.debug(f"描述符形状: 图像1={desc1_shape}, 图像2={desc2_shape}")
+        self._logger.debug(
+            f"描述符形状: 图像1={desc1_shape}, 图像2={desc2_shape}"
+        )
 
         try:
             # 确保描述符数据类型正确
@@ -606,7 +645,7 @@ class ImageStitchingTool(ToolBase):
                 desc1 = desc1.astype(np.float32)
             if desc2.dtype != np.float32:
                 desc2 = desc2.astype(np.float32)
-            
+
             # 方向1：features1 → features2
             matches1 = self._matcher.knnMatch(desc1, desc2, k=2)
 
@@ -633,34 +672,52 @@ class ImageStitchingTool(ToolBase):
             for m2 in good_matches2:
                 # m2.queryIdx是desc2中的索引，m2.trainIdx是desc1中的索引
                 # 检查是否存在互匹配
-                if m2.trainIdx in match_map1 and match_map1[m2.trainIdx] == m2.queryIdx:
+                if (
+                    m2.trainIdx in match_map1
+                    and match_map1[m2.trainIdx] == m2.queryIdx
+                ):
                     # 找到互匹配点，添加到结果中
                     # 使用方向1的匹配点格式
                     for m1 in good_matches1:
-                        if m1.queryIdx == m2.trainIdx and m1.trainIdx == m2.queryIdx:
+                        if (
+                            m1.queryIdx == m2.trainIdx
+                            and m1.trainIdx == m2.queryIdx
+                        ):
                             mutual_matches.append(m1)
                             break
 
             # 确定最终匹配结果
             final_matches = []
-            
+
             # 优先使用互匹配点
             if len(mutual_matches) >= 10:
                 final_matches = mutual_matches
-                self._logger.info(f"使用互匹配点: {len(final_matches)}个匹配点")
+                self._logger.info(
+                    f"使用互匹配点: {len(final_matches)}个匹配点"
+                )
             else:
                 # 互匹配点不足，选择匹配点更多且质量更好的方向
                 # 计算平均距离，评估匹配质量
-                avg_dist1 = np.mean([m.distance for m in good_matches1]) if good_matches1 else float('inf')
-                avg_dist2 = np.mean([m.distance for m in good_matches2]) if good_matches2 else float('inf')
-                
+                avg_dist1 = (
+                    np.mean([m.distance for m in good_matches1])
+                    if good_matches1
+                    else float("inf")
+                )
+                avg_dist2 = (
+                    np.mean([m.distance for m in good_matches2])
+                    if good_matches2
+                    else float("inf")
+                )
+
                 # 综合考虑匹配点数量和质量
                 score1 = len(good_matches1) / (avg_dist1 + 1e-6)  # 避免除零
                 score2 = len(good_matches2) / (avg_dist2 + 1e-6)
-                
+
                 if score1 >= score2:
                     final_matches = good_matches1
-                    self._logger.info(f"使用方向1匹配点: {len(final_matches)}个匹配点, 平均距离={avg_dist1:.2f}")
+                    self._logger.info(
+                        f"使用方向1匹配点: {len(final_matches)}个匹配点, 平均距离={avg_dist1:.2f}"
+                    )
                 else:
                     # 转换方向2的匹配点格式为方向1的格式
                     class Match:
@@ -671,8 +728,12 @@ class ImageStitchingTool(ToolBase):
 
                     final_matches = []
                     for m in good_matches2:
-                        final_matches.append(Match(m.trainIdx, m.queryIdx, m.distance))
-                    self._logger.info(f"使用方向2匹配点: {len(final_matches)}个匹配点, 平均距离={avg_dist2:.2f}")
+                        final_matches.append(
+                            Match(m.trainIdx, m.queryIdx, m.distance)
+                        )
+                    self._logger.info(
+                        f"使用方向2匹配点: {len(final_matches)}个匹配点, 平均距离={avg_dist2:.2f}"
+                    )
 
             self._logger.info(
                 f"匹配结果: 方向1良好匹配数={len(good_matches1)}, 方向2良好匹配数={len(good_matches2)}, 互匹配数={len(mutual_matches)}, 最终匹配数={len(final_matches)}"
@@ -779,7 +840,9 @@ class ImageStitchingTool(ToolBase):
                     visited.add(node)
                     order.append(node)
                     # 按相似度排序邻居，优先访问相似度高的，相似度相同时按节点索引排序
-                    neighbors = sorted(adj_list[node], key=lambda x: (-x[1], x[0]))
+                    neighbors = sorted(
+                        adj_list[node], key=lambda x: (-x[1], x[0])
+                    )
                     for neighbor, weight in neighbors:
                         dfs(neighbor)
 
@@ -788,7 +851,7 @@ class ImageStitchingTool(ToolBase):
 
         # 选择起始节点（与其他图像总相似度最高的）
         total_similarity = np.sum(similarity_matrix, axis=1)
-        
+
         # 找到总相似度最高的节点，当多个节点相似度相同时，选择索引最小的
         max_similarity = np.max(total_similarity)
         start_indices = np.where(total_similarity == max_similarity)[0]
@@ -819,7 +882,9 @@ class ImageStitchingTool(ToolBase):
                     if not visited[i]:
                         # 计算综合得分，当得分相同时，选择索引较小的
                         score = match_matrix[last_idx, i]
-                        if score > best_score or (score == best_score and i < best_match):
+                        if score > best_score or (
+                            score == best_score and i < best_match
+                        ):
                             best_match = i
                             best_score = score
 
@@ -858,13 +923,21 @@ class ImageStitchingTool(ToolBase):
 
             # 计算原始/翻转后的相似度
             roi2_flip = cv2.flip(roi2, 1)
-            sim_original = cv2.matchTemplate(roi1, roi2, cv2.TM_CCOEFF_NORMED)[0][0]
-            sim_flip = cv2.matchTemplate(roi1, roi2_flip, cv2.TM_CCOEFF_NORMED)[0][0]
+            sim_original = cv2.matchTemplate(roi1, roi2, cv2.TM_CCOEFF_NORMED)[
+                0
+            ][0]
+            sim_flip = cv2.matchTemplate(
+                roi1, roi2_flip, cv2.TM_CCOEFF_NORMED
+            )[0][0]
 
             # 为了确保顺序不敏感，也计算反向的相似度
             roi1_flip = cv2.flip(roi1, 1)
-            sim_original_reverse = cv2.matchTemplate(roi2, roi1, cv2.TM_CCOEFF_NORMED)[0][0]
-            sim_flip_reverse = cv2.matchTemplate(roi2, roi1_flip, cv2.TM_CCOEFF_NORMED)[0][0]
+            sim_original_reverse = cv2.matchTemplate(
+                roi2, roi1, cv2.TM_CCOEFF_NORMED
+            )[0][0]
+            sim_flip_reverse = cv2.matchTemplate(
+                roi2, roi1_flip, cv2.TM_CCOEFF_NORMED
+            )[0][0]
 
             # 综合考虑两个方向的相似度
             avg_sim_original = (sim_original + sim_original_reverse) / 2
@@ -873,7 +946,7 @@ class ImageStitchingTool(ToolBase):
             self._logger.info(
                 f"镜像检测：原始相似度={avg_sim_original:.3f}, 翻转后={avg_sim_flip:.3f}"
             )
-            
+
             # 翻转判定：翻转后相似度更高且>0.2
             return avg_sim_flip > avg_sim_original and avg_sim_flip > 0.2
         except Exception as e:
@@ -934,20 +1007,40 @@ class ImageStitchingTool(ToolBase):
             try:
                 # 提取匹配点
                 src_pts = np.float32(
-                    [features[i - 1]["keypoints"][m.queryIdx].pt for m in matches]
+                    [
+                        features[i - 1]["keypoints"][m.queryIdx].pt
+                        for m in matches
+                    ]
                 )
                 dst_pts = np.float32(
-                    [current_features["keypoints"][m.trainIdx].pt for m in matches]
+                    [
+                        current_features["keypoints"][m.trainIdx].pt
+                        for m in matches
+                    ]
                 )
 
                 # 双向单应性矩阵计算
                 self._logger.info("计算双向单应性矩阵")
 
                 # 方向1：第二张图向第一张图对齐 (dst_pts → src_pts)
-                M1, mask1 = cv2.findHomography(dst_pts, src_pts, cv2.RANSAC, 5.0, maxIters=2000, confidence=0.99)
+                M1, mask1 = cv2.findHomography(
+                    dst_pts,
+                    src_pts,
+                    cv2.RANSAC,
+                    5.0,
+                    maxIters=2000,
+                    confidence=0.99,
+                )
 
                 # 方向2：第一张图向第二张图对齐 (src_pts → dst_pts)
-                M2, mask2 = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0, maxIters=2000, confidence=0.99)
+                M2, mask2 = cv2.findHomography(
+                    src_pts,
+                    dst_pts,
+                    cv2.RANSAC,
+                    5.0,
+                    maxIters=2000,
+                    confidence=0.99,
+                )
 
                 # 评估两个方向的单应性矩阵
                 best_M = None
@@ -1015,7 +1108,10 @@ class ImageStitchingTool(ToolBase):
                             [
                                 [0, 0],
                                 [0, result_image.height - 1],
-                                [result_image.width - 1, result_image.height - 1],
+                                [
+                                    result_image.width - 1,
+                                    result_image.height - 1,
+                                ],
                                 [result_image.width - 1, 0],
                             ]
                         ).reshape(-1, 1, 2),
@@ -1035,7 +1131,9 @@ class ImageStitchingTool(ToolBase):
 
                 # 确保画布尺寸有效
                 if canvas_w <= 0 or canvas_h <= 0:
-                    self._logger.warning(f"无效的画布尺寸: {canvas_w}x{canvas_h}")
+                    self._logger.warning(
+                        f"无效的画布尺寸: {canvas_w}x{canvas_h}"
+                    )
                     continue
 
                 self._logger.info(f"拼接画布尺寸：{canvas_w}x{canvas_h}")
@@ -1056,7 +1154,9 @@ class ImageStitchingTool(ToolBase):
                 )
 
                 # 创建第一张图的画布（平移后）
-                result_warped = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
+                result_warped = np.zeros(
+                    (canvas_h, canvas_w, 3), dtype=np.uint8
+                )
 
                 # 计算有效的放置区域
                 y_start = max(0, -y_min)
@@ -1077,7 +1177,8 @@ class ImageStitchingTool(ToolBase):
                     copy_w = min(x_end - x_start, result_w)
                     if copy_h > 0 and copy_w > 0:
                         result_warped[
-                            y_start : y_start + copy_h, x_start : x_start + copy_w
+                            y_start : y_start + copy_h,
+                            x_start : x_start + copy_w,
                         ] = result_image.data[:copy_h, :copy_w]
                     else:
                         self._logger.warning("复制区域无效")
@@ -1106,7 +1207,8 @@ class ImageStitchingTool(ToolBase):
                         copy_h = default_y_end - default_y_start
                         copy_w = default_x_end - default_x_start
                         result_warped[
-                            default_y_start:default_y_end, default_x_start:default_x_end
+                            default_y_start:default_y_end,
+                            default_x_start:default_x_end,
                         ] = result_image.data[:copy_h, :copy_w]
                     else:
                         self._logger.warning("默认放置区域也无效，跳过此图像")
@@ -1130,14 +1232,18 @@ class ImageStitchingTool(ToolBase):
 
                 # 创建掩码（用于融合）
                 mask1 = np.zeros((canvas_h, canvas_w), dtype=np.uint8)
-                mask1[actual_y_start:actual_y_end, actual_x_start:actual_x_end] = 255
+                mask1[
+                    actual_y_start:actual_y_end, actual_x_start:actual_x_end
+                ] = 255
 
                 mask2 = np.zeros((canvas_h, canvas_w), dtype=np.uint8)
                 mask2[warped_image.sum(axis=2) > 0] = 255
 
                 # 融合图像
                 self._logger.info("融合图像")
-                stitched = self._blend_images(result_warped, warped_image, mask1, mask2)
+                stitched = self._blend_images(
+                    result_warped, warped_image, mask1, mask2
+                )
                 self._logger.info(
                     f"融合后尺寸: {stitched.shape[1]}x{stitched.shape[0]}"
                 )
@@ -1184,7 +1290,11 @@ class ImageStitchingTool(ToolBase):
                 continue
 
         # 确保返回有效的图像
-        if result_image.is_valid and result_image.width > 0 and result_image.height > 0:
+        if (
+            result_image.is_valid
+            and result_image.width > 0
+            and result_image.height > 0
+        ):
             self._logger.info(
                 f"拼接完成! 最终结果尺寸: {result_image.width}x{result_image.height}"
             )
@@ -1235,7 +1345,9 @@ class ImageStitchingTool(ToolBase):
                 or result_image.width <= 0
                 or result_image.height <= 0
             ):
-                self._logger.error("拼接失败: 最终结果图像无效，返回第一张图像")
+                self._logger.error(
+                    "拼接失败: 最终结果图像无效，返回第一张图像"
+                )
                 result_image = images[0].copy()
 
         return result_image
@@ -1290,7 +1402,9 @@ class ImageStitchingTool(ToolBase):
 
             # 再次检查裁剪区域
             if w <= 0 or h <= 0:
-                self._logger.warning(f"裁剪黑边失败：调整后裁剪区域无效 {w}x{h}")
+                self._logger.warning(
+                    f"裁剪黑边失败：调整后裁剪区域无效 {w}x{h}"
+                )
                 return image
 
             # 裁剪
@@ -1379,7 +1493,9 @@ class ImageStitchingTool(ToolBase):
             return result
 
         # 先均衡重叠区域的亮度/对比度
-        img1_balanced, img2_balanced = self._balance_brightness(img1, img2, overlap)
+        img1_balanced, img2_balanced = self._balance_brightness(
+            img1, img2, overlap
+        )
 
         # 优化重叠区域检测：从轮廓改为距离变换，生成软掩码
         # 计算mask1到mask2的距离，生成线性渐变权重
@@ -1460,9 +1576,14 @@ class ImageStitchingTool(ToolBase):
             return None
 
         # 检查是否有多张图像需要拼接
-        if hasattr(self, "_input_data_list") and len(self._input_data_list) >= 2:
+        if (
+            hasattr(self, "_input_data_list")
+            and len(self._input_data_list) >= 2
+        ):
             # 记录输入图像信息
-            input_sizes = [f"{img.width}x{img.height}" for img in self._input_data_list]
+            input_sizes = [
+                f"{img.width}x{img.height}" for img in self._input_data_list
+            ]
             self._logger.info(
                 f"开始拼接 {len(self._input_data_list)} 张图像: {input_sizes}"
             )
@@ -1503,9 +1624,14 @@ class ImageStitchingTool(ToolBase):
 
         # 对于图像拼接，我们需要特殊处理
         # 检查是否有多张图像需要拼接
-        if hasattr(self, "_input_data_list") and len(self._input_data_list) >= 2:
+        if (
+            hasattr(self, "_input_data_list")
+            and len(self._input_data_list) >= 2
+        ):
             # 记录输入图像信息
-            input_sizes = [f"{img.width}x{img.height}" for img in self._input_data_list]
+            input_sizes = [
+                f"{img.width}x{img.height}" for img in self._input_data_list
+            ]
             self._logger.info(
                 f"开始拼接 {len(self._input_data_list)} 张图像: {input_sizes}"
             )
@@ -1588,11 +1714,13 @@ class ImageStitchingTool(ToolBase):
 # 注册工具
 if __name__ == "__main__":
     # 测试代码
-    import sys
     import os
+    import sys
 
     # 添加项目根目录到Python路径
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    sys.path.insert(
+        0, os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    )
 
     # 测试图像拼接
     from data.image_data import ImageData

@@ -10,15 +10,15 @@ Date: 2026-01-26
 """
 
 from .performance_monitor import (
-    PerformanceMonitor,
     PerformanceMetrics,
+    PerformanceMonitor,
     PerformanceWidget,
-    get_performance_monitor
+    get_performance_monitor,
 )
 
 __all__ = [
     "PerformanceMonitor",
     "PerformanceMetrics",
     "PerformanceWidget",
-    "get_performance_monitor"
+    "get_performance_monitor",
 ]

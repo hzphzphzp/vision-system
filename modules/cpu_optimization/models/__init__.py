@@ -9,12 +9,6 @@ Author: Vision System Team
 Date: 2026-01-26
 """
 
-from .yolo26_cpu import (
-    YOLO26CPUDetector,
-    create_detector
-)
+from .yolo26_cpu import CPUInferenceConfig, YOLO26CPUDetector, create_detector
 
-__all__ = [
-    "YOLO26CPUDetector",
-    "create_detector"
-]
+__all__ = ["YOLO26CPUDetector", "create_detector", "CPUInferenceConfig"]

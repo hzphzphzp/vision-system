@@ -5,6 +5,7 @@ YOLO26功能测试脚本
 """
 
 import os
+
 from PIL import Image
 from ultralytics import YOLO
 
@@ -44,10 +45,10 @@ if model is None:
 
 # 3. 检查models目录
 if model is None:
-    models_dir = "models"
+    models_dir = "data/models"
     if os.path.exists(models_dir):
         for f in os.listdir(models_dir):
-            if f.endswith('.pt'):
+            if f.endswith(".pt"):
                 model_path = os.path.join(models_dir, f)
                 print(f"✓ 找到模型: {model_path}")
                 model = YOLO(model_path)
@@ -58,7 +59,7 @@ if model is None:
     print("\n请确保以下任一位置有模型文件:")
     print(f"  1. {custom_model}")
     print(f"  2. E:/yolo26n.pt")
-    print(f"  3. models/目录")
+    print(f"  3. data/models/目录")
     exit(1)
 
 print(f"\n✓ 模型加载成功")
@@ -74,14 +75,16 @@ if len(results) > 0:
     if boxes is not None:
         num_detections = len(boxes)
         print(f"\n✓ 检测完成，发现 {num_detections} 个目标")
-        
+
         # 显示检测结果
         for i, box in enumerate(boxes[:10]):
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
             conf = float(box.conf[0].cpu().numpy())
             cls = int(box.cls[0].cpu().numpy())
-            name = results[0].names.get(cls, f'class_{cls}')
-            print(f"  目标{i+1}: {name}, 置信度: {conf:.2f}, 位置: ({x1:.0f}, {y1:.0f}) - ({x2:.0f}, {y2:.0f})")
+            name = results[0].names.get(cls, f"class_{cls}")
+            print(
+                f"  目标{i+1}: {name}, 置信度: {conf:.2f}, 位置: ({x1:.0f}, {y1:.0f}) - ({x2:.0f}, {y2:.0f})"
+            )
     else:
         print("\n✓ 检测完成，未发现目标")
 else:

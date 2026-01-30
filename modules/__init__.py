@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-模块初始化
+模块包
 
-导出模块。
-
-Author: Vision System Team
-Date: 2025-01-04
+包含各种功能模块。
 """
 
-from modules.camera_manager import (
-    CameraManager,
-    HikCamera,
-    CameraInfo,
-    CameraState,
-    CameraType
-)
+# 导入子模块
+from . import cpu_optimization
+from . import camera
+
+# 重新导出常用模块
+from .cpu_optimization import *
+from .camera import *
 
 __all__ = [
+    # CPU优化模块
+    'CPUDetector',
+    # 相机模块
     'CameraManager',
-    'HikCamera',
-    'CameraInfo',
-    'CameraState',
-    'CameraType'
+    'CameraAdapter',
+    'BaslerCameraAdapter',
+    # 子包
+    'cpu_optimization',
+    'camera'
 ]

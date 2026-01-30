@@ -1,0 +1,88 @@
+# skill_orchestration_config.yaml
+
+# 版本信息
+version: "1.1"
+last_updated: "2026-01-30"
+
+# 意图识别配置
+intent_recognition:
+  enabled: true
+  threshold: 2
+  keywords:
+    开发新功能:
+      keywords: ["开发", "新功能", "添加", "实现", "创建", "设计", "构建", "集成"]
+      synonyms:
+        开发: ["开发", "实现", "构建"]
+        新功能: ["新功能", "新特性", "新模块"]
+      priority: 2
+    优化系统:
+      keywords: ["优化", "性能", "改进", "提升", "加速", "增强", "调整"]
+      synonyms:
+        优化: ["优化", "改进", "增强"]
+        性能: ["性能", "速度", "效率"]
+      priority: 2
+    分析需求:
+      keywords: ["需求", "分析", "收集", "整理", "规约", "理解", "梳理"]
+      synonyms:
+        需求: ["需求", "要求", "规格"]
+        分析: ["分析", "研究", "评估"]
+      priority: 1
+    代码审查:
+      keywords: ["代码", "审查", "检查", "质量", "安全", "分析"]
+      synonyms:
+        代码: ["代码", "程序", "代码库"]
+        审查: ["审查", "检查", "分析"]
+      priority: 1
+    文档生成:
+      keywords: ["文档", "生成", "编写", "更新", "创建"]
+      synonyms:
+        文档: ["文档", "手册", "说明"]
+        生成: ["生成", "创建", "编写"]
+      priority: 1
+
+# 技能映射配置
+skill_mappings:
+  开发新功能:
+    flow: ["requirements-analysis", "brainstorming", "planning-execution", "opencv-development", "documentation-generation", "code-review", "test-management", "ui-integration"]
+    parallel: []
+    conditions:
+      ui-integration:
+        depends_on: ["test-management"]
+        condition: "tests_passed"
+  优化系统:
+    flow: ["project-optimization", "brainstorming", "planning-execution", "opencv-development", "code-review", "documentation-generation", "test-management"]
+    parallel: []
+    conditions: {}
+  分析需求:
+    flow: ["requirements-analysis", "brainstorming", "documentation-generation"]
+    parallel: []
+    conditions: {}
+  代码审查:
+    flow: ["code-review", "documentation-generation"]
+    parallel: []
+    conditions: {}
+  文档生成:
+    flow: ["documentation-generation"]
+    parallel: []
+    conditions: {}
+
+# 执行配置
+execution:
+  timeout: 300  # 执行超时时间（秒）
+  max_retries: 3  # 最大重试次数
+  parallel_execution: true  # 是否并行执行
+  thread_pool_size: 4  # 线程池大小
+  retry_delay: 1  # 重试延迟（秒）
+
+# 监控配置
+monitoring:
+  enabled: true
+  log_level: "INFO"
+  metrics_enabled: true
+  dashboard_enabled: false
+
+# 热更新配置
+hot_reload:
+  enabled: true
+  check_interval: 10  # 检查间隔（秒）
+  auto_apply: true  # 是否自动应用配置变更

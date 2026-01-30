@@ -9,52 +9,58 @@ Author: Vision System Team
 Date: 2026-01-19
 """
 
-import os
 import json
-import yaml
-import pickle
 import logging
+import os
+import pickle
 import zipfile
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
-from core.solution import Solution
+import yaml
+
 from core.procedure import Procedure
+from core.solution import Solution
 from core.tool_base import ToolBase
 
 
 class SolutionFileManager:
     """方案文件管理器"""
-    
+
     def __init__(self):
         self._logger = logging.getLogger("SolutionFileManager")
         self._default_dir = Path("solutions")
         self._default_dir.mkdir(exist_ok=True)
-    
-    def save_solution(self, solution: Solution, path: str = None, 
-                      format: str = "json", include_images: bool = False,
-                      compress: bool = False) -> bool:
+
+    def save_solution(
+        self,
+        solution: Solution,
+        path: str = None,
+        format: str = "json",
+        include_images: bool = False,
+        compress: bool = False,
+    ) -> bool:
         """
         保存方案到文件
-        
+
         Args:
             solution: 方案实例
             path: 保存路径，如果为None则使用默认路径
             format: 文件格式 (json/yaml/pickle/vmsol)
             include_images: 是否包含图像数据
             compress: 是否压缩文件
-            
+
         Returns:
             保存成功返回True
         """
         if path is None:
             path = self._default_dir / f"{solution.name}.{format}"
-        
+
         try:
             # 准备方案数据
             data = self._prepare_solution_data(solution, include_images)
-            
+
             # 根据格式保存
             if format.lower() == "json":
                 self._save_json(data, path)
@@ -66,32 +72,34 @@ class SolutionFileManager:
                 self._save_vmsol(data, path, compress)
             else:
                 raise ValueError(f"不支持的格式: {format}")
-            
+
             self._logger.info(f"方案已保存: {path}")
             return True
-            
+
         except Exception as e:
             self._logger.error(f"保存方案失败: {e}")
             return False
-    
-    def load_solution(self, path: str, format: str = None) -> Optional[Solution]:
+
+    def load_solution(
+        self, path: str, format: str = None
+    ) -> Optional[Solution]:
         """
         从文件加载方案
-        
+
         Args:
             path: 文件路径
             format: 文件格式，如果为None则从文件扩展名推断
-            
+
         Returns:
             加载的方案实例，失败返回None
         """
         if not os.path.exists(path):
             self._logger.error(f"文件不存在: {path}")
             return None
-        
+
         if format is None:
             format = os.path.splitext(path)[1][1:]
-        
+
         try:
             # 根据格式加载
             if format.lower() == "json":
@@ -104,63 +112,81 @@ class SolutionFileManager:
                 data = self._load_vmsol(path)
             else:
                 raise ValueError(f"不支持的格式: {format}")
-            
+
             # 创建方案实例
             solution = self._create_solution_from_data(data)
-            
+
             self._logger.info(f"方案已加载: {path}")
             return solution
-            
+
         except Exception as e:
             self._logger.error(f"加载方案失败: {e}")
             return None
-    
-    def export_solution_package(self, solution: Solution, path: str = None,
-                               include_code: bool = True, include_docs: bool = True,
-                               include_images: bool = False) -> bool:
+
+    def export_solution_package(
+        self,
+        solution: Solution,
+        path: str = None,
+        include_code: bool = True,
+        include_docs: bool = True,
+        include_images: bool = False,
+    ) -> bool:
         """
         导出方案包（包含代码、文档等）
-        
+
         Args:
             solution: 方案实例
             path: 导出路径
             include_code: 是否包含代码
             include_docs: 是否包含文档
             include_images: 是否包含图像
-            
+
         Returns:
             导出成功返回True
         """
         if path is None:
             path = self._default_dir / f"{solution.name}_package.zip"
-        
+
         try:
-            with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
                 # 保存方案数据
-                solution_data = self._prepare_solution_data(solution, include_images)
-                zf.writestr("solution.json", json.dumps(solution_data, ensure_ascii=False, indent=2))
-                
+                solution_data = self._prepare_solution_data(
+                    solution, include_images
+                )
+                zf.writestr(
+                    "solution.json",
+                    json.dumps(solution_data, ensure_ascii=False, indent=2),
+                )
+
                 # 生成并保存代码
                 if include_code:
                     code_generator = CodeGenerator()
                     code = code_generator.generate_solution_code(solution)
                     zf.writestr("solution.py", code)
-                    
+
                     # 生成工具代码
                     for procedure in solution.procedures:
-                        proc_code = code_generator.generate_procedure_code(procedure)
-                        zf.writestr(f"procedures/{procedure.name}.py", proc_code)
-                
+                        proc_code = code_generator.generate_procedure_code(
+                            procedure
+                        )
+                        zf.writestr(
+                            f"procedures/{procedure.name}.py", proc_code
+                        )
+
                 # 生成文档
                 if include_docs:
                     doc_generator = DocumentationGenerator()
-                    doc = doc_generator.generate_solution_documentation(solution)
+                    doc = doc_generator.generate_solution_documentation(
+                        solution
+                    )
                     zf.writestr("README.md", doc)
-                    
+
                     # 生成API文档
-                    api_doc = doc_generator.generate_api_documentation(solution)
+                    api_doc = doc_generator.generate_api_documentation(
+                        solution
+                    )
                     zf.writestr("API.md", api_doc)
-                
+
                 # 保存配置文件
                 config = {
                     "name": solution.name,
@@ -169,18 +195,23 @@ class SolutionFileManager:
                     "format": "vmsol",
                     "include_code": include_code,
                     "include_docs": include_docs,
-                    "include_images": include_images
+                    "include_images": include_images,
                 }
-                zf.writestr("config.json", json.dumps(config, ensure_ascii=False, indent=2))
-            
+                zf.writestr(
+                    "config.json",
+                    json.dumps(config, ensure_ascii=False, indent=2),
+                )
+
             self._logger.info(f"方案包已导出: {path}")
             return True
-            
+
         except Exception as e:
             self._logger.error(f"导出方案包失败: {e}")
             return False
-    
-    def _prepare_solution_data(self, solution: Solution, include_images: bool = False) -> Dict[str, Any]:
+
+    def _prepare_solution_data(
+        self, solution: Solution, include_images: bool = False
+    ) -> Dict[str, Any]:
         """准备方案数据"""
         data = {
             "version": "1.0.0",
@@ -188,9 +219,9 @@ class SolutionFileManager:
             "description": f"视觉检测方案: {solution.name}",
             "created": datetime.now().isoformat(),
             "run_interval": solution.run_interval,
-            "procedures": []
+            "procedures": [],
         }
-        
+
         # 添加流程数据
         for procedure in solution.procedures:
             proc_data = {
@@ -201,10 +232,10 @@ class SolutionFileManager:
                 "connections": [],
                 "metadata": {
                     "tool_count": len(procedure.tools),
-                    "connection_count": len(procedure.connections)
-                }
+                    "connection_count": len(procedure.connections),
+                },
             }
-            
+
             # 添加工具数据
             for tool in procedure.tools:
                 tool_info = tool.get_info()
@@ -217,30 +248,34 @@ class SolutionFileManager:
                     "position": tool_info.get("position"),
                     "metadata": {
                         "has_output": tool.has_output(),
-                        "is_enabled": tool.is_enabled
-                    }
+                        "is_enabled": tool.is_enabled,
+                    },
                 }
-                
+
                 # 包含图像数据
-                if include_images and hasattr(tool, 'get_output_image'):
+                if include_images and hasattr(tool, "get_output_image"):
                     try:
                         output = tool.get_output()
-                        if output and hasattr(output, 'data'):
+                        if output and hasattr(output, "data"):
                             import base64
+
                             import numpy as np
+
                             if isinstance(output.data, np.ndarray):
-                                img_data = base64.b64encode(output.data.tobytes()).decode('utf-8')
+                                img_data = base64.b64encode(
+                                    output.data.tobytes()
+                                ).decode("utf-8")
                                 tool_data["output_image"] = {
                                     "format": "numpy_base64",
                                     "shape": output.data.shape,
                                     "dtype": str(output.data.dtype),
-                                    "data": img_data
+                                    "data": img_data,
                                 }
                     except:
                         pass
-                
+
                 proc_data["tools"].append(tool_data)
-            
+
             # 添加连接数据
             for conn in procedure.connections:
                 conn_data = {
@@ -248,118 +283,128 @@ class SolutionFileManager:
                     "to": conn.to_tool,
                     "from_port": conn.from_port,
                     "to_port": conn.to_port,
-                    "metadata": {
-                        "connection_type": "data_flow"
-                    }
+                    "metadata": {"connection_type": "data_flow"},
                 }
                 proc_data["connections"].append(conn_data)
-            
+
             data["procedures"].append(proc_data)
-        
+
         return data
-    
+
     def _save_json(self, data: Dict[str, Any], path: str):
         """保存为JSON格式"""
-        with open(path, 'w', encoding='utf-8') as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-    
+
     def _save_yaml(self, data: Dict[str, Any], path: str):
         """保存为YAML格式"""
-        with open(path, 'w', encoding='utf-8') as f:
-            yaml.dump(data, f, default_flow_style=False, allow_unicode=True, indent=2)
-    
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(
+                data, f, default_flow_style=False, allow_unicode=True, indent=2
+            )
+
     def _save_pickle(self, data: Dict[str, Any], path: str):
         """保存为Pickle格式"""
-        with open(path, 'wb') as f:
+        with open(path, "wb") as f:
             pickle.dump(data, f)
-    
-    def _save_vmsol(self, data: Dict[str, Any], path: str, compress: bool = False):
+
+    def _save_vmsol(
+        self, data: Dict[str, Any], path: str, compress: bool = False
+    ):
         """保存为VisionMaster格式"""
         if compress:
-            with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                zf.writestr("solution.json", json.dumps(data, ensure_ascii=False, indent=2))
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr(
+                    "solution.json",
+                    json.dumps(data, ensure_ascii=False, indent=2),
+                )
         else:
             self._save_json(data, path)
-    
+
     def _load_json(self, path: str) -> Dict[str, Any]:
         """加载JSON格式"""
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
-    
+
     def _load_yaml(self, path: str) -> Dict[str, Any]:
         """加载YAML格式"""
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
-    
+
     def _load_pickle(self, path: str) -> Dict[str, Any]:
         """加载Pickle格式"""
-        with open(path, 'rb') as f:
+        with open(path, "rb") as f:
             return pickle.load(f)
-    
+
     def _load_vmsol(self, path: str) -> Dict[str, Any]:
         """加载VisionMaster格式"""
-        if path.endswith('.zip'):
-            with zipfile.ZipFile(path, 'r') as zf:
-                with zf.open('solution.json') as f:
+        if path.endswith(".zip"):
+            with zipfile.ZipFile(path, "r") as zf:
+                with zf.open("solution.json") as f:
                     return json.load(f)
         else:
             return self._load_json(path)
-    
+
     def _create_solution_from_data(self, data: Dict[str, Any]) -> Solution:
         """从数据创建方案实例"""
         solution = Solution(data.get("name", "Solution"))
         solution.run_interval = data.get("run_interval", 100)
-        
+
         # 加载流程
         for proc_data in data.get("procedures", []):
             procedure = Procedure(proc_data.get("name", "Procedure"))
             procedure.is_enabled = proc_data.get("is_enabled", True)
-            
+
             # 加载工具
             tool_instances = {}
             for tool_data in proc_data.get("tools", []):
                 category = tool_data.get("category")
                 tool_name = tool_data.get("name")
                 display_name = tool_data.get("display_name")
-                
+
                 try:
                     from core.tool_base import ToolRegistry
-                    tool = ToolRegistry.create_tool(category, tool_name, display_name)
-                    
+
+                    tool = ToolRegistry.create_tool(
+                        category, tool_name, display_name
+                    )
+
                     # 设置参数
                     for key, value in tool_data.get("params", {}).items():
                         tool.set_param(key, value)
-                    
+
                     procedure.add_tool(tool)
                     tool_instances[display_name] = tool
-                    
+
                 except Exception as e:
-                    self._logger.warning(f"加载工具失败: {category}.{tool_name}, {e}")
-            
+                    self._logger.warning(
+                        f"加载工具失败: {category}.{tool_name}, {e}"
+                    )
+
             # 加载连接
             for conn_data in proc_data.get("connections", []):
                 from_name = conn_data.get("from")
                 to_name = conn_data.get("to")
                 from_port = conn_data.get("from_port", "OutputImage")
                 to_port = conn_data.get("to_port", "InputImage")
-                
+
                 # 尝试使用新名称
                 if from_name not in tool_instances:
                     for tool in tool_instances.values():
                         if tool.tool_name == from_name:
                             from_name = tool.name
                             break
-                
+
                 if to_name not in tool_instances:
                     for tool in tool_instances.values():
                         if tool.tool_name == to_name:
                             to_name = tool.name
                             break
-                
+
                 procedure.connect(from_name, to_name, from_port, to_port)
-            
+
             solution.add_procedure(procedure)
-        
+
         return solution
 
 
@@ -370,30 +415,34 @@ class CodeGenerator:
         "
         Args:
             path: 方案包文件路径
-            
+
         Returns:
             导入的方案数据，失败返回None
         """
         try:
             if not os.path.exists(path):
                 return None
-                
-            if path.endswith('.vmsol'):
+
+            if path.endswith(".vmsol"):
                 return self._load_vmsol(path)
             else:
                 # 尝试其他格式
-                data = self._load_json(path) or self._load_yaml(path) or self._load_pickle(path)
+                data = (
+                    self._load_json(path)
+                    or self._load_yaml(path)
+                    or self._load_pickle(path)
+                )
                 return data
-                
+
         except Exception as e:
             print(f"导入方案包失败: {e}")
             return None
 
     """代码生成器"""
-    
+
     def __init__(self):
         self._logger = logging.getLogger("CodeGenerator")
-    
+
     def generate_solution_code(self, solution: Solution) -> str:
         """生成方案代码"""
         code = f'''#!/usr/bin/env python3
@@ -435,13 +484,13 @@ class {solution.name.replace(' ', '')}Solution:
     def _setup_procedures(self):
         """设置流程"""
 '''
-        
+
         # 为每个流程生成代码
         for i, procedure in enumerate(solution.procedures):
-            code += f'''
+            code += f"""
         # 流程 {i+1}: {procedure.name}
-        self._setup_procedure_{i+1}()'''
-        
+        self._setup_procedure_{i+1}()"""
+
         code += '''
     
     def run(self, input_image: ImageData = None) -> Dict[str, Any]:
@@ -487,9 +536,9 @@ if __name__ == "__main__":
     # time.sleep(10)
     # solution.stop()
 '''
-        
+
         return code
-    
+
     def generate_procedure_code(self, procedure: Procedure) -> str:
         """生成流程代码"""
         code = f'''#!/usr/bin/env python3
@@ -531,26 +580,26 @@ class {procedure.name.replace(' ', '')}Procedure:
     def _setup_tools(self):
         """设置工具"""
 '''
-        
+
         # 为每个工具生成代码
         for i, tool in enumerate(procedure.tools):
-            code += f'''
+            code += f"""
         # 工具 {i+1}: {tool.name}
-        self._add_tool_{i+1}()'''
-        
+        self._add_tool_{i+1}()"""
+
         code += '''
     
     def _setup_connections(self):
         """设置工具连接"""
 '''
-        
+
         # 为每个连接生成代码
         for i, conn in enumerate(procedure.connections):
-            code += f'''
+            code += f"""
         # 连接 {i+1}: {conn.from_tool} -> {conn.to_tool}
         self.procedure.connect("{conn.from_tool}", "{conn.to_tool}", 
-                              "{conn.from_port}", "{conn.to_port}")'''
-        
+                              "{conn.from_port}", "{conn.to_port}")"""
+
         code += '''
     
     def run(self, input_image: ImageData = None) -> Dict[str, Any]:
@@ -587,16 +636,16 @@ if __name__ == "__main__":
     if final_result:
         print("最终结果:", final_result)
 '''
-        
+
         return code
 
 
 class DocumentationGenerator:
     """文档生成器"""
-    
+
     def __init__(self):
         self._logger = logging.getLogger("DocumentationGenerator")
-    
+
     def generate_solution_documentation(self, solution: Solution) -> str:
         """生成方案文档"""
         doc = f"""# {solution.name} 视觉检测方案
@@ -608,20 +657,20 @@ class DocumentationGenerator:
 ## 流程列表
 
 """
-        
+
         for i, procedure in enumerate(solution.procedures):
             doc += f"### {i+1}. {procedure.name}\n\n"
             doc += f"- 工具数量: {len(procedure.tools)}\n"
             doc += f"- 连接数量: {len(procedure.connections)}\n"
             doc += f"- 状态: {'启用' if procedure.is_enabled else '禁用'}\n\n"
-            
+
             if procedure.tools:
                 doc += "#### 工具列表\n\n"
                 for j, tool in enumerate(procedure.tools):
                     doc += f"{j+1}. **{tool.name}** ({tool.tool_category})\n"
                     doc += f"   - 描述: {tool.tool_description}\n"
                     doc += f"   - 状态: {'启用' if tool.is_enabled else '禁用'}\n\n"
-        
+
         doc += """## 使用方法
 
 ```python
@@ -667,9 +716,9 @@ value = tool.get_param("参数名")
 - 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 - 生成工具: Vision System Code Generator
 """
-        
+
         return doc
-    
+
     def generate_api_documentation(self, solution: Solution) -> str:
         """生成API文档"""
         doc = f"""# {solution.name} API文档
@@ -788,5 +837,5 @@ procedure.connect("本地图像", "高斯滤波", "OutputImage", "InputImage")
 result = solution.run()
 ```
 """
-        
+
         return doc

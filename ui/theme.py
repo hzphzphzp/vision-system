@@ -502,10 +502,10 @@ QToolTip {
 
 def get_style(theme: str = "vision_master") -> str:
     """获取样式表
-    
+
     Args:
         theme: 主题，可选 'vision_master'
-    
+
     Returns:
         样式表字符串
     """
@@ -514,7 +514,7 @@ def get_style(theme: str = "vision_master") -> str:
 
 def apply_theme(widget, theme: str = "vision_master"):
     """应用主题到窗口
-    
+
     Args:
         widget: 要应用样式的小部件
         theme: 主题名称

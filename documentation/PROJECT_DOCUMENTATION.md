@@ -2,7 +2,7 @@
 
 > **项目名称**: Vision System (视觉检测系统)  
 > **版本**: v2.0.0 (CPU优化版)  
-> **最后更新**: 2026年1月29日  
+> **最后更新**: 2026年1月30日  
 > **状态**: ✅ 持续开发中
 
 ---
@@ -49,44 +49,75 @@
 
 ```
 vision_system/
-├── ui/                          # 用户界面层
-│   ├── main_window.py          # 主窗口
-│   ├── tool_library.py         # 工具库面板
-│   ├── algorithm_editor.py     # 算法编辑器
-│   ├── property_panel.py       # 属性面板
-│   ├── result_panel.py         # 结果面板
-│   └── cpu_optimization_dialog.py  # CPU优化对话框
+├── config/                      # 配置文件
+├── configs/                     # 配置模板
 ├── core/                        # 核心逻辑层
+│   ├── communication/           # 通讯模块
 │   ├── tool_base.py            # 工具基类
 │   ├── solution.py             # 方案管理
 │   ├── procedure.py            # 流程管理
 │   └── zoomable_image.py       # 可缩放图像组件
-├── tools/                       # 算法工具层
-│   ├── image_source.py         # 图像源工具
-│   ├── image_filter.py         # 图像滤波工具
-│   ├── template_match.py       # 模板匹配工具
-│   ├── analysis.py             # 图像分析工具
-│   ├── recognition.py          # 识别工具
-│   ├── ocr.py                  # OCR工具
-│   └── cpu_optimization.py     # CPU优化工具 ⭐
+├── data/                        # 数据层
+│   ├── images/                  # 图像文件
+│   ├── models/                  # 模型文件
+│   ├── test_results/            # 测试结果
+│   ├── image_data.py           # 图像数据结构
+│   └── result_data.py          # 结果数据结构
+├── documentation/               # 文档目录
+│   ├── TECHNICAL_DOCUMENT.md   # 技术文档
+│   ├── END_DOCUMENT.md         # 完成总结
+│   └── ...                      # 其他文档文件
+├── examples/                    # 示例代码
 ├── modules/                     # 功能模块层
 │   ├── cpu_optimization/       # CPU优化模块 ⭐
 │   │   ├── core/               # 核心优化引擎
 │   │   ├── models/             # YOLO26-CPU模型
 │   │   ├── api/                # API接口
 │   │   └── utils/              # 性能监控
-│   └── camera_manager.py       # 相机管理
-├── data/                        # 数据层
-│   ├── image_data.py           # 图像数据结构
-│   └── result_data.py          # 结果数据结构
-├── skills/                      # AI技能库
-│   ├── search-skill/
-│   ├── skill-from-github/
-│   ├── skill-from-masters/
-│   └── skill-from-notebook/
-└── docs/                        # 文档目录
-    ├── TECHNICAL_DOCUMENT.md   # 技术文档
-    └── END_DOCUMENT.md         # 完成总结
+│   ├── camera/                 # 相机模块
+│   │   ├── __init__.py         # 相机模块导出
+│   │   ├── camera_manager.py   # 相机管理
+│   │   ├── camera_adapter.py   # 相机适配器
+│   │   └── basler_camera.py     # Basler相机模块
+├── tests/                       # 测试代码
+├── tools/                       # 算法工具层
+│   ├── image_source.py         # 图像源工具
+│   ├── camera_parameter_setting.py # 相机参数设置工具
+│   ├── vision/                 # 视觉工具子包
+│   │   ├── __init__.py         # 视觉工具导出
+│   │   ├── template_match.py   # 模板匹配工具
+│   │   ├── appearance_detection.py # 外观检测工具
+│   │   ├── cpu_optimization.py # CPU优化工具 ⭐
+│   │   ├── image_filter.py     # 图像滤波工具
+│   │   ├── image_stitching.py  # 图像拼接工具
+│   │   ├── ocr.py              # OCR工具
+│   │   └── recognition.py      # 识别工具
+│   ├── communication/          # 通信工具子包
+│   │   ├── __init__.py         # 通信工具导出
+│   │   └── communication.py    # 通信工具实现
+│   └── analysis/               # 分析工具子包
+│       ├── __init__.py         # 分析工具导出
+│       └── analysis.py         # 分析工具实现
+├── ui/                          # 用户界面层
+│   ├── main_window.py          # 主窗口
+│   ├── tool_library.py         # 工具库面板
+│   ├── property_panel.py       # 属性面板
+│   ├── result_panel.py         # 结果面板
+│   ├── communication_dialog.py # 通讯对话框
+│   └── cpu_optimization_dialog.py  # CPU优化对话框
+├── utils/                       # 工具函数
+│   ├── error_management.py      # 错误管理
+│   ├── error_recovery.py        # 错误恢复
+│   ├── exceptions.py            # 异常定义
+│   ├── hot_reload.py            # 热重载
+│   ├── image_processing_utils.py # 图像处理工具函数库
+│   ├── image_filter_utils.py    # 图像滤波工具
+│   └── performance_optimization.py # 性能优化
+├── .gitignore
+├── README.md
+├── professional_app.py
+├── requirements.txt
+└── run.py
 ```
 
 ---
@@ -277,6 +308,8 @@ class VisionAlgorithmToolBase:
 | | QRCodeReader | 二维码识别 | 二维码识别 | ✅ |
 | | OCRReader | OCR识别 | 文字识别 | ✅ |
 | 图像拼接 | ImageStitchingTool | 图像拼接 | 增强型传统方法，支持多图像拼接 | ✅ |
+| 外观检测 | AppearanceDetector | 外观检测 | 检测表面缺陷和外观瑕疵，支持多种缺陷类型识别 | ✅ |
+| 表面缺陷检测 | SurfaceDefectDetector | 表面缺陷检测 | 高精度表面缺陷检测，支持多尺度分析和自适应阈值 | ✅ |
 
 ### 3.4 通讯模块
 
@@ -347,7 +380,7 @@ result = optimizer._optimized_softmax(data)
 from modules.cpu_optimization import create_yolo26_detector
 
 detector = create_yolo26_detector(
-    "models/yolov8n.onnx",
+    "models/yolo26n.onnx",
     CPUInferenceConfig(num_threads=4, conf_threshold=0.25)
 )
 
@@ -677,6 +710,7 @@ print("拼接测试完成，两种顺序的结果应该一致")
 ```python
 from tools.camera_parameter_setting import CameraParameterSettingTool
 from tools.image_source import CameraSource
+from modules.camera.camera_manager import CameraManager
 
 # 创建相机参数设置工具
 camera_tool = CameraParameterSettingTool()

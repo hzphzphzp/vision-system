@@ -13,8 +13,8 @@ Author: Vision System Team
 Date: 2026-01-27
 """
 
-import sys
 import os
+import sys
 import time
 import unittest
 from unittest.mock import Mock, patch
@@ -22,14 +22,14 @@ from unittest.mock import Mock, patch
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.communication import CommunicationManager, get_communication_manager
 from core.communication import ProtocolManager, ProtocolType
-from core.communication.tcp_client import TCPClient
-from core.communication.tcp_server import TCPServer
-from core.communication.serial_port import SerialPort
-from core.communication.websocket import WebSocketClient
 from core.communication.http_client import HTTPClient
 from core.communication.modbus_tcp import ModbusTCPClient
+from core.communication.serial_port import SerialPort
+from core.communication.tcp_client import TCPClient
+from core.communication.tcp_server import TCPServer
+from core.communication.websocket import WebSocketClient
+from tools.communication import CommunicationManager, get_communication_manager
 
 
 class TestCommunicationManager(unittest.TestCase):
@@ -48,11 +48,7 @@ class TestCommunicationManager(unittest.TestCase):
     def test_create_connection(self):
         """测试创建连接"""
         # 创建TCP客户端连接
-        tcp_config = {
-            "host": "127.0.0.1",
-            "port": 8080,
-            "timeout": 5.0
-        }
+        tcp_config = {"host": "127.0.0.1", "port": 8080, "timeout": 5.0}
         tcp_protocol = self.comm_manager.create_connection(
             "test_tcp", "tcp_client", tcp_config
         )
@@ -61,11 +57,7 @@ class TestCommunicationManager(unittest.TestCase):
     def test_get_connection(self):
         """测试获取连接"""
         # 先创建连接
-        tcp_config = {
-            "host": "127.0.0.1",
-            "port": 8080,
-            "timeout": 5.0
-        }
+        tcp_config = {"host": "127.0.0.1", "port": 8080, "timeout": 5.0}
         self.comm_manager.create_connection(
             "test_tcp", "tcp_client", tcp_config
         )
@@ -76,11 +68,7 @@ class TestCommunicationManager(unittest.TestCase):
     def test_get_available_connections(self):
         """测试获取可用连接列表"""
         # 创建测试连接
-        tcp_config = {
-            "host": "127.0.0.1",
-            "port": 8080,
-            "timeout": 5.0
-        }
+        tcp_config = {"host": "127.0.0.1", "port": 8080, "timeout": 5.0}
         self.comm_manager.create_connection(
             "test_tcp", "tcp_client", tcp_config
         )
@@ -91,11 +79,7 @@ class TestCommunicationManager(unittest.TestCase):
     def test_set_string(self):
         """测试设置字符串型数据"""
         # 创建测试连接
-        tcp_config = {
-            "host": "127.0.0.1",
-            "port": 8080,
-            "timeout": 5.0
-        }
+        tcp_config = {"host": "127.0.0.1", "port": 8080, "timeout": 5.0}
         self.comm_manager.create_connection(
             "test_tcp", "tcp_client", tcp_config
         )
@@ -109,11 +93,7 @@ class TestCommunicationManager(unittest.TestCase):
     def test_set_int(self):
         """测试设置整型数据"""
         # 创建测试连接
-        tcp_config = {
-            "host": "127.0.0.1",
-            "port": 8080,
-            "timeout": 5.0
-        }
+        tcp_config = {"host": "127.0.0.1", "port": 8080, "timeout": 5.0}
         self.comm_manager.create_connection(
             "test_tcp", "tcp_client", tcp_config
         )
@@ -127,11 +107,7 @@ class TestCommunicationManager(unittest.TestCase):
     def test_set_float(self):
         """测试设置浮点型数据"""
         # 创建测试连接
-        tcp_config = {
-            "host": "127.0.0.1",
-            "port": 8080,
-            "timeout": 5.0
-        }
+        tcp_config = {"host": "127.0.0.1", "port": 8080, "timeout": 5.0}
         self.comm_manager.create_connection(
             "test_tcp", "tcp_client", tcp_config
         )
@@ -145,11 +121,7 @@ class TestCommunicationManager(unittest.TestCase):
     def test_get_read_data(self):
         """测试获取读取数据"""
         # 创建测试连接
-        tcp_config = {
-            "host": "127.0.0.1",
-            "port": 8080,
-            "timeout": 5.0
-        }
+        tcp_config = {"host": "127.0.0.1", "port": 8080, "timeout": 5.0}
         self.comm_manager.create_connection(
             "test_tcp", "tcp_client", tcp_config
         )
@@ -163,11 +135,7 @@ class TestCommunicationManager(unittest.TestCase):
     def test_is_device_connect(self):
         """测试检查设备是否处于连接状态"""
         # 创建测试连接
-        tcp_config = {
-            "host": "127.0.0.1",
-            "port": 8080,
-            "timeout": 5.0
-        }
+        tcp_config = {"host": "127.0.0.1", "port": 8080, "timeout": 5.0}
         self.comm_manager.create_connection(
             "test_tcp", "tcp_client", tcp_config
         )
@@ -220,11 +188,7 @@ class TestTCPClient(unittest.TestCase):
 
     def test_connect(self):
         """测试连接"""
-        config = {
-            "host": "127.0.0.1",
-            "port": 8080,
-            "timeout": 1.0
-        }
+        config = {"host": "127.0.0.1", "port": 8080, "timeout": 1.0}
         # 由于是测试环境，连接可能会失败，但方法应该能正常执行
         result = self.tcp_client.connect(config)
         self.assertIsInstance(result, bool)
@@ -262,11 +226,7 @@ class TestTCPServer(unittest.TestCase):
 
     def test_listen(self):
         """测试开始监听"""
-        config = {
-            "host": "0.0.0.0",
-            "port": 8080,
-            "max_connections": 5
-        }
+        config = {"host": "0.0.0.0", "port": 8080, "max_connections": 5}
         # 开始监听，由于是测试环境，可能会失败，但方法应该能正常执行
         result = self.tcp_server.listen(config)
         self.assertIsInstance(result, bool)
@@ -292,10 +252,7 @@ class TestSerialPort(unittest.TestCase):
 
     def test_connect(self):
         """测试连接"""
-        config = {
-            "port": "COM1",
-            "baudrate": 9600
-        }
+        config = {"port": "COM1", "baudrate": 9600}
         # 由于是测试环境，连接可能会失败，但方法应该能正常执行
         result = self.serial_port.connect(config)
         self.assertIsInstance(result, bool)
@@ -333,9 +290,7 @@ class TestWebSocketClient(unittest.TestCase):
 
     def test_connect(self):
         """测试连接"""
-        config = {
-            "url": "ws://localhost:8080/ws"
-        }
+        config = {"url": "ws://localhost:8080/ws"}
         # 由于是测试环境，连接可能会失败，但方法应该能正常执行
         result = self.ws_client.connect(config)
         self.assertIsInstance(result, bool)
@@ -367,20 +322,14 @@ class TestHTTPClient(unittest.TestCase):
 
     def test_connect(self):
         """测试连接"""
-        config = {
-            "base_url": "https://httpbin.org",
-            "timeout": 5.0
-        }
+        config = {"base_url": "https://httpbin.org", "timeout": 5.0}
         # 连接，方法应该能正常执行
         result = self.http_client.connect(config)
         self.assertTrue(result)
 
     def test_get(self):
         """测试GET请求"""
-        config = {
-            "base_url": "https://httpbin.org",
-            "timeout": 5.0
-        }
+        config = {"base_url": "https://httpbin.org", "timeout": 5.0}
         self.http_client.connect(config)
         # 发送GET请求
         result = self.http_client.get("/get")
@@ -388,10 +337,7 @@ class TestHTTPClient(unittest.TestCase):
 
     def test_post(self):
         """测试POST请求"""
-        config = {
-            "base_url": "https://httpbin.org",
-            "timeout": 5.0
-        }
+        config = {"base_url": "https://httpbin.org", "timeout": 5.0}
         self.http_client.connect(config)
         # 发送POST请求
         data = {"test": "value"}
@@ -423,7 +369,7 @@ class TestModbusTCPClient(unittest.TestCase):
             "host": "127.0.0.1",
             "port": 502,
             "timeout": 1.0,
-            "unit_id": 1
+            "unit_id": 1,
         }
         # 由于是测试环境，连接可能会失败，但方法应该能正常执行
         result = self.modbus_client.connect(config)

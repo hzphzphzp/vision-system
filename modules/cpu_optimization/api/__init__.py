@@ -10,12 +10,12 @@ Date: 2026-01-26
 """
 
 from .cpu_detector import (
-    CPUDetectorAPI,
     APIConfig,
-    DetectionResult,
     BackendType,
+    CPUDetectorAPI,
+    DetectionResult,
     DetectorState,
-    create_detector_api
+    create_detector_api,
 )
 
 __all__ = [
@@ -24,5 +24,5 @@ __all__ = [
     "DetectionResult",
     "BackendType",
     "DetectorState",
-    "create_detector_api"
+    "create_detector_api",
 ]
