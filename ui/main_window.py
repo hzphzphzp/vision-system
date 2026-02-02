@@ -2865,13 +2865,11 @@ class MainWindow(QMainWindow):
         base_y = 100 + grid_row * grid_spacing
 
         if is_in_viewport:
-            # 位置在视口内，使用原始位置，但确保在网格上对齐
-            # 计算最近的网格点
-            grid_x = round(position.x() / grid_spacing) * grid_spacing
-            grid_y = round(position.y() / grid_spacing) * grid_spacing
-            adjusted_position = QPointF(grid_x, grid_y)
+            # 位置在视口内，使用原始位置，但进行微小的网格对齐（只对齐到最近像素，避免大偏移）
+            # 不再强制对齐到200px网格，保持鼠标位置
+            adjusted_position = QPointF(round(position.x()), round(position.y()))
             self._logger.info(
-                f"位置在视口内，使用网格对齐位置: ({adjusted_position.x():.1f}, {adjusted_position.y():.1f})"
+                f"位置在视口内，精确跟随鼠标: ({adjusted_position.x():.1f}, {adjusted_position.y():.1f})"
             )
         else:
             # 位置不在视口内，使用网格布局位置
@@ -2906,7 +2904,7 @@ class MainWindow(QMainWindow):
             calibrated_y = 0
 
         # 检查是否与现有工具重叠
-        min_distance = 150  # 最小工具间距
+        min_distance = 80  # 减小最小工具间距，避免过度推开
         for tool_item in self.tool_items.values():
             tool_pos = tool_item.pos()
             distance = (
@@ -2914,14 +2912,15 @@ class MainWindow(QMainWindow):
                 + (calibrated_y - tool_pos.y()) ** 2
             ) ** 0.5
             if distance < min_distance:
-                # 调整位置以避免重叠
-                angle = math.atan2(
-                    calibrated_y - tool_pos.y(), calibrated_x - tool_pos.x()
-                )
-                calibrated_x = tool_pos.x() + math.cos(angle) * min_distance
-                calibrated_y = tool_pos.y() + math.sin(angle) * min_distance
-                calibrated_x = round(calibrated_x)
-                calibrated_y = round(calibrated_y)
+                # 只有当非常接近时才调整位置，使用更小的偏移量
+                if distance > 0:  # 避免除以0
+                    angle = math.atan2(
+                        calibrated_y - tool_pos.y(), calibrated_x - tool_pos.x()
+                    )
+                    calibrated_x = tool_pos.x() + math.cos(angle) * min_distance
+                    calibrated_y = tool_pos.y() + math.sin(angle) * min_distance
+                    calibrated_x = round(calibrated_x)
+                    calibrated_y = round(calibrated_y)
                 break
 
         calibrated_position = QPointF(calibrated_x, calibrated_y)
@@ -3521,7 +3520,7 @@ class MainWindow(QMainWindow):
 
             # 获取当前流程中的相机工具
             camera_tools = []
-            for procedure in self._procedure_manager.procedures:
+            for procedure in self.solution.procedures:
                 for tool in procedure.tools:
                     if isinstance(tool, CameraSource):
                         camera_tools.append(tool)
@@ -4070,7 +4069,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "错误", f"打开性能监控失败:\n{str(e)}")
 
     def import_solution_package(self):
-        """导入方案包"""
+        """导入方案包并自动加载到当前编辑器"""
         try:
             # 选择文件
             file_path, _ = QFileDialog.getOpenFileName(
@@ -4085,19 +4084,57 @@ class MainWindow(QMainWindow):
 
             # 使用SolutionFileManager导入方案包
             file_manager = SolutionFileManager()
-            data = file_manager.import_solution_package(file_path)
+            imported_solution = file_manager.import_solution_package(file_path)
 
-            if data:
+            if imported_solution:
+                # 导入成功，加载到当前方案
+                self.solution = imported_solution
+                self.current_procedure = None
+
+                # 清空算法编辑器
+                self.algorithm_scene.clear()
+                self.tool_items.clear()
+                self.connection_items.clear()
+
+                # 重新创建工具图形项和连接
+                for procedure in self.solution.procedures:
+                    self.current_procedure = procedure
+                    # 为每个工具创建图形项
+                    for i, tool in enumerate(procedure.tools):
+                        # 计算位置（网格布局）
+                        x = 100 + (i % 3) * 250
+                        y = 100 + (i // 3) * 150
+                        self._add_tool_to_scene(tool, x, y)
+
+                    # 恢复连接
+                    for connection in procedure.connections:
+                        from_tool = connection.get("from")
+                        to_tool = connection.get("to")
+                        if from_tool in self.tool_items and to_tool in self.tool_items:
+                            from_item = self.tool_items[from_tool]
+                            to_item = self.tool_items[to_tool]
+                            # 创建连接线
+                            from_port = from_item.output_port
+                            to_port = to_item.input_port
+                            if from_port and to_port:
+                                line = ConnectionLine(from_port, to_port)
+                                self.algorithm_scene.addItem(line)
+                                self.connection_items[(from_tool, to_tool)] = line
+
+                # 更新项目浏览器
+                self.project_dock.set_solution(self.solution)
+
                 QMessageBox.information(
-                    self, "成功", f"方案包已导入:\n{file_path}"
+                    self, "成功", f"方案包已导入并加载:\n{file_path}\n\n包含 {len(self.solution.procedures)} 个流程"
                 )
                 self.update_status(
                     f"方案包导入成功: {os.path.basename(file_path)}"
                 )
             else:
-                QMessageBox.critical(self, "错误", "导入方案包失败")
+                QMessageBox.critical(self, "错误", "导入方案包失败，请检查文件格式")
 
         except Exception as e:
+            self._logger.error(f"导入方案包时发生错误: {e}", exc_info=True)
             QMessageBox.critical(
                 self, "错误", f"导入方案包时发生错误:\n{str(e)}"
             )
