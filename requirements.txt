@@ -1,7 +1,19 @@
 # Vision System Requirements
 # 
 # This file contains all the Python dependencies needed for the Vision System
-# Updated: 2025-01-12
+# Updated: 2026-02-03
+
+# =============================================================================
+# Qt Framework (Choose ONE of the following)
+# =============================================================================
+# Option 1: PySide6 (Recommended - Best compatibility)
+PySide6>=6.0.0
+
+# Option 2: PyQt5 (Legacy support)
+# PyQt5>=5.15.0
+
+# Option 3: PyQt6 (Alternative)
+# PyQt6>=6.0.0
 
 # =============================================================================
 # Core dependencies
@@ -9,10 +21,6 @@
 numpy>=1.26.4,<2.0.0
 opencv-python>=4.5.0
 opencv-contrib-python>=4.5.0
-PyQt5>=5.15.0
-
-# Optional dependencies for PyQt6
-# PyQt6>=6.0.0  # Uncomment if you prefer PyQt6
 
 # =============================================================================
 # Testing dependencies
