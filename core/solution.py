@@ -19,29 +19,22 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
-# 添加Qt相关导入用于非阻塞操作
-try:
-    from PyQt5.QtCore import QEventLoop, QTimer
-
-    QT_AVAILABLE = True
-except ImportError:
-    QT_AVAILABLE = False
+# 添加项目路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 添加Qt相关导入用于非阻塞操作
 try:
     from PyQt5.QtCore import QEventLoop, QTimer
     from PyQt5.QtWidgets import QApplication
-
     QT_AVAILABLE = True
 except ImportError:
+    QT_AVAILABLE = False
     try:
         from PyQt6.QtCore import QEventLoop, QTimer
         from PyQt6.QtWidgets import QApplication
-
         QT_AVAILABLE = True
     except ImportError:
         QT_AVAILABLE = False
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.procedure import Procedure, ProcedureManager
 from data.image_data import ImageData

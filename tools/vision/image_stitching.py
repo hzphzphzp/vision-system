@@ -10,10 +10,14 @@ Date: 2026-01-27
 """
 
 import os
+import sys
 import pickle
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
+
+# 添加项目路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import cv2
 import numpy as np
@@ -150,8 +154,10 @@ class ImageStitchingTool(ToolBase):
         # 加载持久化参数
         self._load_persistent_params()
 
-        # 结果缓存
+        # 结果缓存（带大小限制，防止内存泄漏）
         self._result_cache = {}
+        self._max_cache_size = 10  # 最大缓存条目数
+        self._cache_access_order = []  # 记录缓存访问顺序（用于LRU淘汰）
 
         # 初始化特征点检测器
         self._detector = self._create_feature_detector()
@@ -375,9 +381,9 @@ class ImageStitchingTool(ToolBase):
 
             # 检查缓存
             cache_key = self._get_cache_key(input_data)
-            if cache_key in self._result_cache:
+            cached_result = self._get_from_cache(cache_key)
+            if cached_result is not None:
                 self._logger.info(f"从缓存中获取结果: {cache_key}")
-                cached_result = self._result_cache[cache_key]
                 return cached_result
 
             # 记录开始时间
@@ -449,9 +455,8 @@ class ImageStitchingTool(ToolBase):
                     f"拼接成功! 输出尺寸: {stitched_image.width}x{stitched_image.height}, 处理时间: {processing_time:.2f}秒"
                 )
 
-                # 保存到缓存
-                self._result_cache[cache_key] = result
-                self._logger.info(f"结果已缓存: {cache_key}")
+                # 保存到缓存（带大小限制）
+                self._add_to_cache(cache_key, result)
             else:
                 # 如果拼接失败，返回第一张图像
                 result.status = False
@@ -498,7 +503,62 @@ class ImageStitchingTool(ToolBase):
 
         # 清空缓存
         self._result_cache.clear()
+        self._cache_access_order.clear()
         self._logger.info("参数已更新，缓存已清空")
+
+    def _add_to_cache(self, cache_key: str, result: ResultData):
+        """
+        添加结果到缓存（带LRU淘汰机制）
+
+        Args:
+            cache_key: 缓存键
+            result: 结果数据
+        """
+        # 如果缓存已满，移除最久未使用的条目
+        if len(self._result_cache) >= self._max_cache_size:
+            # 移除最旧的缓存条目
+            oldest_key = self._cache_access_order.pop(0)
+            if oldest_key in self._result_cache:
+                del self._result_cache[oldest_key]
+                self._logger.info(f"缓存已满，移除旧条目: {oldest_key}")
+
+        # 添加新条目
+        self._result_cache[cache_key] = result
+        self._cache_access_order.append(cache_key)
+        self._logger.info(f"结果已缓存: {cache_key} (当前缓存大小: {len(self._result_cache)}/{self._max_cache_size})")
+
+    def _get_from_cache(self, cache_key: str) -> Optional[ResultData]:
+        """
+        从缓存获取结果（更新访问顺序）
+
+        Args:
+            cache_key: 缓存键
+
+        Returns:
+            缓存的结果数据，如果不存在则返回None
+        """
+        if cache_key in self._result_cache:
+            # 更新访问顺序（移到末尾表示最近使用）
+            if cache_key in self._cache_access_order:
+                self._cache_access_order.remove(cache_key)
+            self._cache_access_order.append(cache_key)
+            return self._result_cache[cache_key]
+        return None
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息"""
+        return {
+            "cache_size": len(self._result_cache),
+            "max_cache_size": self._max_cache_size,
+            "cache_keys": list(self._result_cache.keys()),
+            "access_order": self._cache_access_order.copy(),
+        }
+
+    def clear_cache(self):
+        """清空结果缓存"""
+        self._result_cache.clear()
+        self._cache_access_order.clear()
+        self._logger.info("图像拼接缓存已清空")
 
     def _detect_and_match_features(
         self, images: List[ImageData]

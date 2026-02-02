@@ -21,24 +21,24 @@ import math
 import os
 import sys
 
+# 添加项目路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 logging.basicConfig(level=logging.INFO)
 
 # 设置protobuf兼容模式（解决paddlepaddle兼容性问题）
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
 # 导入热重载功能
 try:
     from utils.hot_reload import create_hot_reload_manager
-
     HOT_RELOAD_AVAILABLE = True
 except ImportError:
     HOT_RELOAD_AVAILABLE = False
     print("[警告] 热重载功能不可用，请安装 watchdog 库")
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from enum import Enum
-from typing import Any, Dict, List, Optional
 
 PYQT_VERSION = 5
 
@@ -1444,8 +1444,8 @@ class MainWindow(QMainWindow):
         flow_tab_layout.setSpacing(4)
 
         # 流程标签
-        flow_label = QLabel("流程1")
-        flow_label.setStyleSheet(
+        self.flow_label = QLabel("流程1")
+        self.flow_label.setStyleSheet(
             """
             QLabel {
                 background-color: #ff6a00;
@@ -1457,7 +1457,7 @@ class MainWindow(QMainWindow):
             }
         """
         )
-        flow_tab_layout.addWidget(flow_label)
+        flow_tab_layout.addWidget(self.flow_label)
         flow_tab_layout.addStretch()
 
         middle_layout.addWidget(flow_tab_widget)
@@ -3265,10 +3265,56 @@ class MainWindow(QMainWindow):
             self.property_dock.show_tool_properties(item_object)
         elif item_type == "procedure":
             # 切换到指定流程
-            self.current_procedure = item_object
+            self._switch_to_procedure(item_object)
         elif item_type == "solution":
             # 处理方案双击事件
             pass
+
+    def _save_current_procedure_state(self):
+        """保存当前流程的状态到Procedure对象"""
+        if not self.current_procedure:
+            return
+        
+        # 保存当前工具的位置信息到流程
+        for tool_name, tool_item in self.tool_items.items():
+            if tool_name in self.current_procedure._tools:
+                # 工具位置已在GraphicsToolItem中保存，不需要额外操作
+                pass
+        
+        self._logger.info(f"已保存流程状态: {self.current_procedure.name}")
+
+    def _switch_to_procedure(self, procedure):
+        """切换到指定流程"""
+        self._logger.info(f"切换到流程: {procedure.name}")
+        
+        # 保存当前流程的工具状态（如果有）
+        if hasattr(self, 'current_procedure') and self.current_procedure:
+            self._save_current_procedure_state()
+        
+        # 切换当前流程
+        self.current_procedure = procedure
+        
+        # 清空算法编辑器
+        self.algorithm_scene.clear()
+        self.tool_items.clear()
+        self.connection_items.clear()
+        
+        # 加载新流程的工具到算法编辑器
+        if procedure and hasattr(procedure, '_tools'):
+            for tool_name, tool in procedure._tools.items():
+                self._create_tool_on_editor(tool, QPointF(200, 200))
+        
+        # 刷新项目树
+        self.project_dock.refresh()
+        
+        # 刷新属性面板
+        self.property_dock.clear_properties()
+        
+        # 更新流程标签
+        if hasattr(self, 'flow_label'):
+            self.flow_label.setText(procedure.name)
+        
+        self._logger.info(f"已切换到流程: {procedure.name}, 工具数量: {procedure.tool_count}")
 
     def _on_project_item_selected(self, item_type: str, item_object: Any):
         """项目树节点选择事件"""
@@ -3293,6 +3339,9 @@ class MainWindow(QMainWindow):
         elif item_type == "procedure":
             # 切换当前流程
             self.current_procedure = item_object
+            # 更新流程标签
+            if hasattr(self, 'flow_label'):
+                self.flow_label.setText(item_object.name)
             # 显示流程属性
             if hasattr(self, "property_dock") and self.property_dock:
                 self.property_dock.clear_properties()

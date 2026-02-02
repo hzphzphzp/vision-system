@@ -10,10 +10,15 @@ Author: Vision System Team
 Date: 2025-01-04
 """
 
+import os
+import sys
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+
+# 添加项目路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 
@@ -22,7 +27,6 @@ try:
     import cv2
 except ImportError:
     import warnings
-
     warnings.warn("OpenCV未安装，ImageData的某些功能将不可用")
 
 
@@ -120,6 +124,11 @@ class ImageData:
         # 转换为灰度
         gray_image = image.to_gray()
     """
+
+    __slots__ = (
+        '_data', '_timestamp', '_roi', '_camera_id', '_pixel_format',
+        '_image_type', '_metadata', '_height', '_width', '_channels'
+    )
 
     def __init__(
         self,

@@ -9,12 +9,15 @@ Author: Vision System Team
 Date: 2025-01-12
 """
 
+import gc
 import logging
 import os
 import sys
+import time
 from threading import Lock
 from typing import Any, Dict, List, Optional
 
+# 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cv2
@@ -48,6 +51,8 @@ class OCRReader(RecognitionToolBase):
 
     _ocr_model = None
     _ocr_model_lock = Lock()
+    _last_used_time = 0
+    _max_idle_time = 300  # 5分钟无使用则自动释放（秒）
 
     PARAM_DEFINITIONS = {
         "language": ToolParameter(
@@ -103,6 +108,13 @@ class OCRReader(RecognitionToolBase):
     @classmethod
     def _get_ocr_model(cls):
         """获取OCR模型（单例模式）"""
+        # 检查是否需要自动释放（超过最大空闲时间）
+        if cls._ocr_model is not None:
+            idle_time = time.time() - cls._last_used_time
+            if idle_time > cls._max_idle_time:
+                _logger.info(f"OCR模型空闲{idle_time:.1f}秒，自动释放内存")
+                cls.release_model()
+
         if cls._ocr_model is None:
             with cls._ocr_model_lock:
                 if cls._ocr_model is None:
@@ -113,11 +125,47 @@ class OCRReader(RecognitionToolBase):
                         cls._ocr_model = easyocr.Reader(
                             ["ch_sim", "en"], gpu=False
                         )
+                        cls._last_used_time = time.time()
                         _logger.info("EasyOCR模型初始化完成")
                     except Exception as e:
                         _logger.error(f"初始化EasyOCR失败: {e}")
                         raise ToolException(f"OCR模型初始化失败: {e}")
+
+        # 更新最后使用时间
+        cls._last_used_time = time.time()
         return cls._ocr_model
+
+    @classmethod
+    def release_model(cls):
+        """释放OCR模型内存"""
+        with cls._ocr_model_lock:
+            if cls._ocr_model is not None:
+                _logger.info("释放OCR模型内存...")
+                try:
+                    # 删除模型引用
+                    del cls._ocr_model
+                    cls._ocr_model = None
+                    cls._last_used_time = 0
+                    # 强制垃圾回收
+                    gc.collect()
+                    _logger.info("OCR模型内存已释放")
+                except Exception as e:
+                    _logger.warning(f"释放OCR模型时发生错误: {e}")
+
+    @classmethod
+    def get_model_memory_usage(cls) -> Dict[str, Any]:
+        """获取模型内存使用情况"""
+        with cls._ocr_model_lock:
+            if cls._ocr_model is None:
+                return {"loaded": False, "idle_time": 0}
+
+            idle_time = time.time() - cls._last_used_time
+            return {
+                "loaded": True,
+                "idle_time": idle_time,
+                "max_idle_time": cls._max_idle_time,
+                "will_auto_release": idle_time > cls._max_idle_time,
+            }
 
     def _run_impl(self):
         """执行OCR识别"""
@@ -251,6 +299,8 @@ class OCREnglish(RecognitionToolBase):
 
     _ocr_model = None
     _ocr_model_lock = Lock()
+    _last_used_time = 0
+    _max_idle_time = 300  # 5分钟无使用则自动释放（秒）
 
     PARAM_DEFINITIONS = {
         "min_confidence": ToolParameter(
@@ -289,6 +339,13 @@ class OCREnglish(RecognitionToolBase):
     @classmethod
     def _get_ocr_model(cls):
         """获取OCR模型（单例模式）"""
+        # 检查是否需要自动释放（超过最大空闲时间）
+        if cls._ocr_model is not None:
+            idle_time = time.time() - cls._last_used_time
+            if idle_time > cls._max_idle_time:
+                _logger.info(f"英文OCR模型空闲{idle_time:.1f}秒，自动释放内存")
+                cls.release_model()
+
         if cls._ocr_model is None:
             with cls._ocr_model_lock:
                 if cls._ocr_model is None:
@@ -297,11 +354,47 @@ class OCREnglish(RecognitionToolBase):
                         import easyocr
 
                         cls._ocr_model = easyocr.Reader(["en"], gpu=False)
+                        cls._last_used_time = time.time()
                         _logger.info("英文OCR模型初始化完成")
                     except Exception as e:
                         _logger.error(f"初始化英文OCR失败: {e}")
                         raise ToolException(f"OCR模型初始化失败: {e}")
+
+        # 更新最后使用时间
+        cls._last_used_time = time.time()
         return cls._ocr_model
+
+    @classmethod
+    def release_model(cls):
+        """释放OCR模型内存"""
+        with cls._ocr_model_lock:
+            if cls._ocr_model is not None:
+                _logger.info("释放英文OCR模型内存...")
+                try:
+                    # 删除模型引用
+                    del cls._ocr_model
+                    cls._ocr_model = None
+                    cls._last_used_time = 0
+                    # 强制垃圾回收
+                    gc.collect()
+                    _logger.info("英文OCR模型内存已释放")
+                except Exception as e:
+                    _logger.warning(f"释放英文OCR模型时发生错误: {e}")
+
+    @classmethod
+    def get_model_memory_usage(cls) -> Dict[str, Any]:
+        """获取模型内存使用情况"""
+        with cls._ocr_model_lock:
+            if cls._ocr_model is None:
+                return {"loaded": False, "idle_time": 0}
+
+            idle_time = time.time() - cls._last_used_time
+            return {
+                "loaded": True,
+                "idle_time": idle_time,
+                "max_idle_time": cls._max_idle_time,
+                "will_auto_release": idle_time > cls._max_idle_time,
+            }
 
     def _run_impl(self):
         """执行英文OCR识别"""
