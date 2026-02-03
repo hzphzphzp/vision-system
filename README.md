@@ -61,10 +61,10 @@ python run.py --gui
 |------|------|
 | **图像源** | 图像读取器、相机采集、相机参数设置 |
 | **图像处理** | 滤波、形态学、阈值、缩放、图像拼接、**图像计算** |
-| **视觉算法** | 模板匹配、几何检测、斑点分析、YOLO26-CPU、**OCR** |
-| **测量工具** | 卡尺测量、尺寸测量、**标定** |
+| **视觉算法** | 模板匹配、几何检测、斑点分析、YOLO26-CPU、**OCR**、**标定** |
+| **测量工具** | 卡尺测量、尺寸测量 |
 | **识别工具** | 条码、二维码、**OCR识别** |
-| **通信工具** | TCP、串口、Modbus、WebSocket |
+| **通信工具** | TCP、串口、Modbus、WebSocket、IO控制 |
 | **分析工具** | 斑点分析、像素计数、直方图 |
 | **外观检测** | 外观检测器、表面缺陷检测器 |
 | **标定工具** | 手动标定、棋盘格标定、圆点标定 |
@@ -107,86 +107,86 @@ vision_system-opencode/
 ├── 📁 config/              # 配置文件
 ├── 📁 configs/             # 配置模板
 ├── 📁 core/                # 核心模块
-│   ├── 📁 communication/   # 通讯模块
-│   ├── tool_base.py       # 工具基类
-│   ├── solution.py        # 方案管理
-│   ├── procedure.py       # 流程管理
+│   ├── 📁 communication/   # 通讯模块 (TCP/串口/Modbus/WebSocket)
+│   ├── memory_pool.py      # 图像缓冲区内存池 (NEW)
+│   ├── pipeline.py         # 确定性图像处理流水线 (NEW)
+│   ├── procedure.py        # 流程管理
+│   ├── roi_tool_mixin.py   # ROI工具混入
+│   ├── solution.py         # 方案管理
 │   ├── solution_file_manager.py # 方案文件管理
-│   ├── roi_tool_mixin.py  # ROI工具混入
-│   ├── zoomable_image.py  # 可缩放图像组件
-│   ├── memory_pool.py     # 图像缓冲区内存池 (NEW)
-│   └── pipeline.py        # 确定性图像处理流水线 (NEW)
+│   ├── tool_base.py        # 工具基类
+│   └── zoomable_image.py   # 可缩放图像组件
 ├── 📁 data/                # 数据结构
-│   ├── 📁 images/          # 图像文件
-│   ├── 📁 models/          # 模型文件
-│   ├── 📁 test_results/    # 测试结果
-│   ├── image_data.py      # 图像数据
-│   └── result_data.py     # 结果数据
+│   ├── image_data.py       # 图像数据
+│   ├── result_data.py      # 结果数据
+│   └── 📁 models/          # 模型文件
 ├── 📁 documentation/       # 技术文档
-│   ├── PROJECT_DOCUMENTATION.md  # 项目综合文档
+│   ├── ARCHITECTURE.md     # 系统架构设计 (NEW)
+│   ├── INDEX.md            # 文档导航索引 (NEW)
 │   ├── ERROR_HANDLING_GUIDE.md   # 错误处理指南
-│   ├── PROJECT_REFERENCE.md      # 项目参考
-│   ├── PROJECT_SUMMARY.md        # 项目总结
-│   ├── SKILL_USAGE_GUIDE.md      # 技能使用指南
-│   ├── CODE_QUALITY_IMPROVEMENT.md # 代码质量改进
+│   ├── PROJECT_DOCUMENTATION.md  # 项目综合文档
+│   ├── PROJECT_OPTIMIZATION_GUIDE.md # 优化指南
+│   ├── TECHNICAL_DOCUMENT.md     # 技术文档
 │   └── ...                # 其他文档
 ├── 📁 docs/                # 用户文档
-│   └── edge_algorithms.md  # 边缘设备AI算法推荐
+│   ├── edge_algorithms.md  # 边缘设备AI算法推荐
+│   └── 📁 plans/           # 实施计划
 ├── 📁 examples/            # 示例代码
 ├── 📁 modules/             # 功能模块
-│   ├── 📁 cpu_optimization/  # CPU优化模块
-│   │   ├── 📁 api/          # API接口
-│   │   ├── 📁 core/         # 核心优化引擎
-│   │   ├── 📁 models/       # YOLO26-CPU模型
-│   │   └── 📁 utils/        # 性能监控
-│   ├── basler_camera.py    # Basler相机模块
-│   ├── camera_adapter.py   # 相机适配器
-│   └── camera_manager.py   # 相机管理
+│   ├── 📁 camera/          # 相机模块
+│   │   ├── camera_manager.py   # 相机管理
+│   │   ├── camera_adapter.py   # 相机适配器
+│   │   └── basler_camera.py    # Basler相机
+│   └── 📁 cpu_optimization/    # CPU优化模块
+│       ├── 📁 api/         # API接口
+│       ├── 📁 core/        # 核心优化引擎
+│       ├── 📁 models/      # YOLO26-CPU模型
+│       └── 📁 utils/       # 性能监控
 ├── 📁 tests/               # 测试代码
-│   ├── test_image_stitching.py  # 图像拼接测试
-│   ├── test_stitching_consistency.py  # 拼接一致性测试
-│   ├── test_tool_position_stability.py  # 工具位置稳定性测试
-│   └── ...                # 其他测试文件
-├── 📁 tools/               # 算法工具
-│   ├── image_source.py    # 图像源
-│   ├── image_filter.py    # 图像处理
-│   ├── image_stitching.py # 图像拼接
-│   ├── image_calculation.py # 图像计算
-│   ├── analysis.py        # 分析工具
-│   ├── communication.py   # 通信工具
-│   ├── cpu_optimization.py # CPU优化工具
-│   ├── ocr.py             # OCR工具
-│   ├── recognition.py     # 识别工具
-│   ├── template_match.py  # 模板匹配工具
-│   ├── appearance_detection.py # 外观检测工具
+│   ├── test_calibration.py # 标定工具测试 (NEW)
+│   ├── test_memory_pool.py # 内存池测试 (NEW)
+│   ├── test_pipeline.py    # 流水线测试 (NEW)
+│   ├── test_integration.py # 集成测试
+│   ├── test_image_stitching.py # 图像拼接测试
+│   └── ...                 # 其他测试文件
+├── 📁 tools/               # 算法工具 (子包结构)
+│   ├── 📁 vision/          # 视觉工具
+│   │   ├── calibration.py  # 标定工具 (NEW)
+│   │   ├── template_match.py   # 模板匹配
+│   │   ├── image_filter.py     # 图像滤波
+│   │   ├── image_stitching.py  # 图像拼接
+│   │   ├── image_calculation.py# 图像计算
+│   │   ├── appearance_detection.py # 外观检测
+│   │   ├── ocr.py          # OCR识别
+│   │   ├── recognition.py  # 条码/二维码识别
+│   │   └── cpu_optimization.py # CPU优化工具
+│   ├── 📁 communication/   # 通信工具
+│   │   ├── communication.py    # 通信基类
+│   │   ├── enhanced_communication.py # 增强通信
+│   │   └── io_control.py       # IO控制
+│   ├── 📁 analysis/        # 分析工具
+│   │   └── analysis.py     # 斑点分析、卡尺测量
+│   ├── image_source.py     # 图像源
 │   └── camera_parameter_setting.py # 相机参数设置
 ├── 📁 ui/                  # 用户界面
-│   ├── main_window.py     # 主窗口
-│   ├── tool_library.py    # 工具库
-│   ├── property_panel.py  # 属性面板
-│   ├── result_panel.py    # 结果面板
-│   ├── enhanced_result_panel.py  # 增强结果面板
-│   ├── enhanced_result_dock.py   # 增强结果 dock
+│   ├── main_window.py      # 主窗口
+│   ├── tool_library.py     # 工具库
+│   ├── property_panel.py   # 属性面板
+│   ├── result_panel.py     # 结果面板
 │   ├── communication_config.py   # 通信配置
 │   ├── communication_dialog.py   # 通信对话框
-│   ├── communication_monitor.py  # 通信监控
-│   ├── cpu_optimization_dialog.py # CPU优化对话框
-│   ├── roi_selection_dialog.py   # ROI选择对话框
-│   ├── project_browser.py        # 项目浏览器
-│   ├── theme.py                  # 主题设置
-│   ├── qt_compat.py              # Qt兼容性层 (PyQt5/PyQt6/PySide6)
-│   └── ...                # 其他UI组件
+│   ├── cpu_optimization_dialog.py# CPU优化对话框
+│   ├── qt_compat.py        # Qt兼容性层
+│   └── ...                 # 其他UI组件
 ├── 📁 utils/               # 工具函数
 │   ├── error_management.py # 错误管理
-│   ├── error_recovery.py   # 错误恢复
 │   ├── exceptions.py       # 异常定义
-│   ├── hot_reload.py       # 热重载
-│   ├── image_filter_utils.py # 图像滤波工具
+│   ├── image_filter_utils.py   # 图像滤波工具
 │   └── performance_optimization.py # 性能优化
 ├── 📄 professional_app.py  # 专业应用
-├── 📄 requirements.txt    # 依赖文件
-├── 📄 run.py              # 运行脚本
-└── 📄 README.md           # 项目说明
+├── 📄 requirements.txt     # 依赖文件
+├── 📄 run.py               # 运行脚本
+└── 📄 README.md            # 项目说明
 ```
 
 ## 📚 文档结构
@@ -194,11 +194,13 @@ vision_system-opencode/
 | 文档 | 说明 |
 |------|------|
 | **[README.md](README.md)** | 项目介绍和快速开始 |
-| **[documentation/INDEX.md](documentation/INDEX.md)** | 文档索引和导航 |
-| **[documentation/ARCHITECTURE.md](documentation/ARCHITECTURE.md)** | 架构设计文档 (NEW) |
+| **[documentation/INDEX.md](documentation/INDEX.md)** | 文档索引和导航 (NEW) |
+| **[documentation/ARCHITECTURE.md](documentation/ARCHITECTURE.md)** | 系统架构设计 (NEW) |
 | **[docs/performance_benchmark.md](docs/performance_benchmark.md)** | 性能优化基准测试报告 |
 | **[documentation/PROJECT_DOCUMENTATION.md](documentation/PROJECT_DOCUMENTATION.md)** | 项目综合文档 |
 | **[documentation/ERROR_HANDLING_GUIDE.md](documentation/ERROR_HANDLING_GUIDE.md)** | 错误处理指南 |
+| **[documentation/PROJECT_OPTIMIZATION_GUIDE.md](documentation/PROJECT_OPTIMIZATION_GUIDE.md)** | 项目优化指南 |
+| **[documentation/TECHNICAL_DOCUMENT.md](documentation/TECHNICAL_DOCUMENT.md)** | 技术文档 |
 | **[AGENTS.md](AGENTS.md)** | AI Agent开发指南 |
 
 ## 🧪 测试验证
