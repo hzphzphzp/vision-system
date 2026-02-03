@@ -122,6 +122,8 @@ class HTTPClient(ProtocolBase):
             self._session = None
 
         self.set_state(ConnectionState.DISCONNECTED)
+        self._emit = lambda *args, **kwargs: None  # 断开回调引用
+        self.clear_callbacks()
         logger.info("[HTTPClient] 会话已关闭")
 
     def set_auth(self, username: str, password: str, auth_type: str = "basic"):

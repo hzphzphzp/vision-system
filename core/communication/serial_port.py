@@ -166,19 +166,34 @@ class SerialPort(ProtocolBase):
 
     def disconnect(self):
         """关闭串口"""
+        logger.info("[SerialPort] 开始关闭串口...")
+        
         self._running = False
+        logger.info("[SerialPort] 设置_running=False")
 
         if self._serial:
+            logger.info("[SerialPort] 关闭串口...")
             try:
                 if self._serial.is_open:
                     self._serial.close()
+                    logger.info("[SerialPort] 串口已关闭")
                 self._serial = None
             except Exception as e:
                 logger.debug(f"[SerialPort] 关闭串口时发生异常: {e}")
 
+        # 等待接收线程结束
+        if self._receive_thread and self._receive_thread.is_alive():
+            logger.info("[SerialPort] 等待接收线程结束...")
+            self._receive_thread.join(timeout=1.0)
+            self._receive_thread = None
+            logger.info("[SerialPort] 接收线程已清理")
+
         self.set_state(ConnectionState.DISCONNECTED)
         self._emit("on_disconnect")
-        logger.info("[SerialPort] 已关闭串口")
+        self._emit = lambda *args, **kwargs: None  # 断开回调引用
+        self.clear_callbacks()
+        logger.info("[SerialPort] 回调已清除")
+        logger.info("[SerialPort] 串口已关闭")
 
     def send(self, data: Union[str, bytes, dict]) -> bool:
         """发送数据

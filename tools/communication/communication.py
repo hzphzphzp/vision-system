@@ -237,6 +237,7 @@ class CommunicationManager:
             protocol = self._connections[name]
             if protocol:
                 protocol.disconnect()
+                protocol.clear_callbacks()
             del self._connections[name]
             if name in self._device_map:
                 del self._device_map[name]
@@ -246,6 +247,7 @@ class CommunicationManager:
         for name, protocol in self._connections.items():
             if protocol:
                 protocol.disconnect()
+                protocol.clear_callbacks()
         self._connections.clear()
         self._device_map.clear()
 

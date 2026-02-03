@@ -74,6 +74,10 @@ class ProtocolBase:
         """
         self._callbacks[event] = callback
 
+    def clear_callbacks(self):
+        """清除所有回调，防止内存泄漏"""
+        self._callbacks.clear()
+
     def _emit(self, event: str, *args, **kwargs):
         """触发事件回调"""
         if event in self._callbacks:

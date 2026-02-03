@@ -109,13 +109,18 @@ class ModbusTCPClient(ProtocolBase):
 
     def disconnect(self):
         """断开连接"""
+        logger.info("[ModbusTCP] 开始断开连接...")
+        
         with self._lock:
             if not self._running:
+                logger.info("[ModbusTCP] 已经在断开状态")
                 return
 
             self._running = False
+            logger.info("[ModbusTCP] 设置_running=False")
 
         if self._socket:
+            logger.info("[ModbusTCP] 关闭socket...")
             try:
                 self._socket.shutdown(socket.SHUT_RDWR)
             except:
@@ -125,15 +130,24 @@ class ModbusTCPClient(ProtocolBase):
             except:
                 pass
             self._socket = None
+            logger.info("[ModbusTCP] socket已关闭")
 
+        queue_count = len(self._response_queues)
         self._response_queues.clear()
+        logger.info(f"[ModbusTCP] 已清空响应队列 ({queue_count}项)")
 
         if self._receive_thread and self._receive_thread.is_alive():
-            self._receive_thread.join(timeout=2.0)
+            logger.info("[ModbusTCP] 等待接收线程结束...")
+            self._receive_thread.join(timeout=1.0)
+            self._receive_thread = None
+            logger.info("[ModbusTCP] 接收线程已清理")
 
         self.set_state(ConnectionState.DISCONNECTED)
         self._emit("on_disconnect")
-        logger.info("[ModbusTCP] 已断开连接")
+        self._emit = lambda *args, **kwargs: None  # 断开回调引用
+        self.clear_callbacks()
+        logger.info("[ModbusTCP] 回调已清除")
+        logger.info("[ModbusTCP] 断开连接完成")
 
     def read_coils(self, address: int, count: int) -> Tuple[bool, List[int]]:
         """读取线圈状态"""

@@ -55,6 +55,7 @@ class WebSocketClient(ProtocolBase):
         self._reconnect_interval = 5.0
         self._heartbeat_interval = 30
         self._heartbeat_thread: Optional[threading.Thread] = None
+        self._reconnect_timer: Optional[threading.Timer] = None  # 重连定时器
 
     def connect(self, config: Dict[str, Any]) -> bool:
         """连接到WebSocket服务端
@@ -117,21 +118,51 @@ class WebSocketClient(ProtocolBase):
 
     def disconnect(self):
         """断开连接"""
+        logger.info("[WebSocketClient] 开始断开连接...")
+        
         self._running = False
         self._auto_reconnect = False
+        logger.info("[WebSocketClient] 设置_running=False")
+
+        # 停止重连定时器
+        if self._reconnect_timer:
+            try:
+                self._reconnect_timer.cancel()
+            except:
+                pass
+            self._reconnect_timer = None
+            logger.info("[WebSocketClient] 重连定时器已停止")
 
         self._stop_heartbeat()
+        logger.info("[WebSocketClient] 心跳已停止")
 
         if self._ws:
+            logger.info("[WebSocketClient] 关闭WebSocket连接...")
             try:
                 self._ws.close()
             except Exception as e:
                 logger.debug(f"[WebSocketClient] 关闭连接时发生异常: {e}")
             self._ws = None
+            logger.info("[WebSocketClient] WebSocket连接已关闭")
+
+        if self._thread and self._thread.is_alive():
+            logger.info("[WebSocketClient] 等待接收线程结束...")
+            self._thread.join(timeout=1.0)
+            self._thread = None
+            logger.info("[WebSocketClient] 接收线程已清理")
+
+        if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+            logger.info("[WebSocketClient] 等待心跳线程结束...")
+            self._heartbeat_thread.join(timeout=1.0)
+            self._heartbeat_thread = None
+            logger.info("[WebSocketClient] 心跳线程已清理")
 
         self.set_state(ConnectionState.DISCONNECTED)
         self._emit("on_disconnect")
-        logger.info("[WebSocketClient] 已断开连接")
+        self._emit = lambda *args, **kwargs: None  # 断开回调引用
+        self.clear_callbacks()
+        logger.info("[WebSocketClient] 回调已清除")
+        logger.info("[WebSocketClient] 断开连接完成")
 
     def send(self, data: Union[str, bytes]) -> bool:
         """发送数据
@@ -154,76 +185,39 @@ class WebSocketClient(ProtocolBase):
             return True
 
         except Exception as e:
-            logger.error(f"[WebSocketClient] 发送数据失败: {e}")
-            self._emit("on_error", str(e))
+            logger.error(f"[WebSocketClient] 发送失败: {e}")
             return False
 
-    def send_json(self, data: Dict) -> bool:
-        """发送JSON数据
+    def receive(self, timeout: float = None) -> Any:
+        """接收数据
 
         Args:
-            data: 要发送的字典数据
+            timeout: 超时时间（秒）
 
         Returns:
-            bool: 发送是否成功
+            接收到的数据
         """
-        import json
-
-        return self.send(json.dumps(data, ensure_ascii=False))
-
-    def receive(self, timeout: float = None) -> Any:
-        """接收数据（阻塞模式）"""
-        if not self.is_connected() or not self._ws:
-            return None
-
-        try:
-            self._ws.settimeout(timeout)
-            opcode, data = self._ws.recv_data()
-            if opcode == websocket.ABNF.OPCODE_TEXT:
-                return data.decode("utf-8")
-            else:
-                return data
-        except Exception as e:
-            logger.debug(f"[WebSocketClient] 接收数据失败: {e}")
-            return None
-
-    def ping(self, message: bytes = b"ping") -> bool:
-        """发送ping"""
-        if self._ws:
-            try:
-                self._ws.ping(message)
-                return True
-            except:
-                pass
-        return False
-
-    def pong(self, message: bytes = b"pong") -> bool:
-        """发送pong"""
-        if self._ws:
-            try:
-                self._ws.pong(message)
-                return True
-            except:
-                pass
-        return False
+        # WebSocket使用回调方式接收数据，此方法返回None
+        return None
 
     def _receive_loop(self):
         """接收数据循环"""
         while self._running:
             try:
-                opcode, data = self._ws.recv_data()
-
-                if not self._running:
+                if not self._ws:
                     break
+
+                # 接收数据
+                opcode, data = self._ws.recv_data()
 
                 if opcode == websocket.ABNF.OPCODE_TEXT:
                     self._emit("on_message", data.decode("utf-8"))
                 elif opcode == websocket.ABNF.OPCODE_BINARY:
-                    self._emit("on_binary", data)
+                    self._emit("on_message", data)
                 elif opcode == websocket.ABNF.OPCODE_PING:
-                    self._ws.pong()
-                elif opcode == websocket.ABNF.OPCODE_PONG:
-                    self._emit("on_pong")
+                    self._ws.pong(data)
+                elif opcode == websocket.ABNF.OPCODE_CLOSE:
+                    break
 
             except websocket.WebSocketTimeoutException:
                 continue
@@ -232,15 +226,29 @@ class WebSocketClient(ProtocolBase):
                     logger.error(f"[WebSocketClient] 接收异常: {e}")
                 break
 
+        # 使用定时器进行异步重连，避免在接收线程中阻塞
         if self._running and self._auto_reconnect:
             logger.info(
                 f"[WebSocketClient] {self._reconnect_interval}秒后自动重连..."
             )
-            time.sleep(self._reconnect_interval)
-            self.connect(self._config)
+            self._reconnect_timer = threading.Timer(
+                self._reconnect_interval, 
+                self._do_reconnect
+            )
+            self._reconnect_timer.daemon = True
+            self._reconnect_timer.start()
         else:
             self.set_state(ConnectionState.DISCONNECTED)
             self._emit("on_disconnect")
+
+    def _do_reconnect(self):
+        """执行重连（在独立线程中）"""
+        if self._running and self._auto_reconnect:
+            logger.info("[WebSocketClient] 开始自动重连...")
+            try:
+                self.connect(self._config)
+            except Exception as e:
+                logger.error(f"[WebSocketClient] 自动重连失败: {e}")
 
     def _start_heartbeat(self):
         """启动心跳"""
@@ -248,12 +256,17 @@ class WebSocketClient(ProtocolBase):
 
         def heartbeat_loop():
             while self._running:
-                time.sleep(self._heartbeat_interval)
-                if self._running and self.is_connected():
-                    try:
-                        self._ws.ping()
-                    except:
-                        break
+                try:
+                    time.sleep(self._heartbeat_interval)
+                    if self._running and self.is_connected() and self._ws:
+                        try:
+                            self._ws.ping()
+                        except Exception as e:
+                            logger.warning(f"[WebSocketClient] 心跳发送失败: {e}")
+                            break
+                except Exception as e:
+                    logger.error(f"[WebSocketClient] 心跳循环异常: {e}")
+                    break
 
         self._heartbeat_thread = threading.Thread(
             target=heartbeat_loop, daemon=True
@@ -262,32 +275,31 @@ class WebSocketClient(ProtocolBase):
 
     def _stop_heartbeat(self):
         """停止心跳"""
-        self._heartbeat_thread = None
+        if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+            # 等待心跳线程结束
+            self._heartbeat_thread.join(timeout=1.0)
+            self._heartbeat_thread = None
 
 
 if __name__ == "__main__":
-    import json
+    import time
 
     logging.basicConfig(level=logging.INFO)
 
     ws = WebSocketClient()
-    ws.register_callback("on_message", lambda data: print(f"收到: {data}"))
-    ws.register_callback("on_connect", lambda: print("连接成功"))
-    ws.register_callback("on_disconnect", lambda: print("连接断开"))
+    ws.register_callback(
+        "on_message", lambda data: print(f"收到消息: {data}")
+    )
+    ws.register_callback("on_connect", lambda: print("已连接"))
+    ws.register_callback("on_disconnect", lambda: print("已断开"))
 
-    config = {
-        "url": "ws://localhost:8080",
-        "auto_reconnect": False,
-        "heartbeat": True,
-        "heartbeat_interval": 30,
-    }
-
-    if ws.connect(config):
+    if ws.connect({"url": "ws://echo.websocket.org/"}):
+        print("连接成功，发送测试消息...")
         ws.send("Hello WebSocket!")
-        ws.send_json({"type": "test", "data": "Hello"})
 
-        import time
-
-        time.sleep(5)
-
-        ws.disconnect()
+        try:
+            time.sleep(5)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            ws.disconnect()

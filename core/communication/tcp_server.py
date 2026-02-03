@@ -164,40 +164,66 @@ class TCPServer(ProtocolBase):
 
     def stop(self):
         """停止监听"""
+        logger.info("[TCPServer] 开始停止监听...")
+        
         with self._clients_lock:
             if not self._running:
+                logger.info("[TCPServer] 已经在停止状态")
                 return
 
             self._running = False
+            logger.info("[TCPServer] 设置_running=False")
 
         # 停止心跳
         self._stop_heartbeat()
+        logger.info("[TCPServer] 心跳已停止")
 
         # 优雅关闭客户端连接
+        client_count = len(self._clients)
+        logger.info(f"[TCPServer] 关闭 {client_count} 个客户端连接...")
         for client_id in list(self._clients.keys()):
             self._remove_client(client_id, graceful=True)
+        logger.info("[TCPServer] 所有客户端连接已关闭")
 
-        # 关闭线程池
+        # 关闭线程池并等待完成
         if self._thread_pool:
-            self._thread_pool.shutdown(wait=False)
+            logger.info("[TCPServer] 关闭线程池...")
+            # 使用wait=False避免阻塞，cancel_futures=True取消未执行的任务
+            self._thread_pool.shutdown(wait=False, cancel_futures=True)
+            # 给线程池一些时间清理，但不阻塞
+            time.sleep(0.1)
+            del self._thread_pool
+            self._thread_pool = None
+            logger.info("[TCPServer] 线程池已关闭")
 
         # 关闭服务器 socket
         if self._server_socket:
+            logger.info("[TCPServer] 关闭服务器socket...")
             try:
                 self._server_socket.close()
             except:
                 pass
             self._server_socket = None
+            logger.info("[TCPServer] 服务器socket已关闭")
 
         # 等待监听线程结束
         if self._listen_thread and self._listen_thread.is_alive():
-            self._listen_thread.join(timeout=2.0)
+            logger.info("[TCPServer] 等待监听线程结束...")
+            self._listen_thread.join(timeout=1.0)
+            self._listen_thread = None
+            logger.info("[TCPServer] 监听线程已清理")
 
         # 清理资源
         self._receive_queues.clear()
+        self._clients.clear()
+        logger.info("[TCPServer] 已清理接收队列和客户端列表")
+        
         self.set_state(ConnectionState.DISCONNECTED)
         self._emit("on_stop")
-        logger.info("[TCPServer] 已停止监听")
+        self._emit = lambda *args, **kwargs: None  # 断开回调引用
+        self.clear_callbacks()
+        logger.info("[TCPServer] 回调已清除")
+        logger.info("[TCPServer] 停止监听完成")
 
     def disconnect(self):
         """断开连接（别名）"""
