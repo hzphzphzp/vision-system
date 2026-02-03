@@ -18,7 +18,9 @@
 - 🛡️ **内存优化**: 修复多处内存泄漏问题
 - 📷 **图像拼接**: 支持任意顺序图像拼接，智能融合
 - 🎯 **YOLO26-CPU**: 高性能目标检测，支持CPU优化
-- ⚡ **性能优化**: __slots__内存优化，PySide6兼容性层
+- ⚡ **性能优化**: __slots__内存优化，**内存池** + **确定性流水线**
+- 🔁 **内存池 (ImageBufferPool)**: 预分配固定大小图像内存，避免频繁malloc/free，提升118x分配速度
+- 📋 **确定性流水线 (DeterministicPipeline)**: 生产者-消费者模式，严格顺序处理，无共享状态
 
 ## 🚀 快速开始
 
@@ -60,11 +62,12 @@ python run.py --gui
 | **图像源** | 图像读取器、相机采集、相机参数设置 |
 | **图像处理** | 滤波、形态学、阈值、缩放、图像拼接、**图像计算** |
 | **视觉算法** | 模板匹配、几何检测、斑点分析、YOLO26-CPU、**OCR** |
-| **测量工具** | 卡尺测量、尺寸测量 |
+| **测量工具** | 卡尺测量、尺寸测量、**标定** |
 | **识别工具** | 条码、二维码、**OCR识别** |
 | **通信工具** | TCP、串口、Modbus、WebSocket |
 | **分析工具** | 斑点分析、像素计数、直方图 |
 | **外观检测** | 外观检测器、表面缺陷检测器 |
+| **标定工具** | 手动标定、棋盘格标定、圆点标定 |
 
 ### 🖥️ 用户界面
 - **主窗口**: VisionMaster风格的专业界面
@@ -110,7 +113,9 @@ vision_system-opencode/
 │   ├── procedure.py       # 流程管理
 │   ├── solution_file_manager.py # 方案文件管理
 │   ├── roi_tool_mixin.py  # ROI工具混入
-│   └── zoomable_image.py  # 可缩放图像组件
+│   ├── zoomable_image.py  # 可缩放图像组件
+│   ├── memory_pool.py     # 图像缓冲区内存池 (NEW)
+│   └── pipeline.py        # 确定性图像处理流水线 (NEW)
 ├── 📁 data/                # 数据结构
 │   ├── 📁 images/          # 图像文件
 │   ├── 📁 models/          # 模型文件
@@ -188,8 +193,13 @@ vision_system-opencode/
 
 | 文档 | 说明 |
 |------|------|
-| **[PROJECT_DOCUMENTATION.md](documentation/PROJECT_DOCUMENTATION.md)** | 项目综合文档 |
-| **[ERROR_HANDLING_GUIDE.md](documentation/ERROR_HANDLING_GUIDE.md)** | 错误处理指南 |
+| **[README.md](README.md)** | 项目介绍和快速开始 |
+| **[documentation/INDEX.md](documentation/INDEX.md)** | 文档索引和导航 |
+| **[documentation/ARCHITECTURE.md](documentation/ARCHITECTURE.md)** | 架构设计文档 (NEW) |
+| **[docs/performance_benchmark.md](docs/performance_benchmark.md)** | 性能优化基准测试报告 |
+| **[documentation/PROJECT_DOCUMENTATION.md](documentation/PROJECT_DOCUMENTATION.md)** | 项目综合文档 |
+| **[documentation/ERROR_HANDLING_GUIDE.md](documentation/ERROR_HANDLING_GUIDE.md)** | 错误处理指南 |
+| **[AGENTS.md](AGENTS.md)** | AI Agent开发指南 |
 
 ## 🧪 测试验证
 
@@ -209,7 +219,12 @@ vision_system-opencode/
 | **YOLO26** | test_yolo26.py | YOLO26功能测试 |
 | | test_yolo26_new.py | YOLO26新功能测试 |
 | **外观检测** | test_appearance_detection.py | 外观检测功能测试 |
+| **性能优化** | test_memory_pool.py | 内存池测试 |
+| | test_image_data_pool.py | ImageData内存池集成测试 |
+| | test_pipeline.py | 流水线框架测试 |
+| | test_solution_pipeline.py | Solution流水线集成测试 |
 | **集成测试** | test_integration.py | 系统集成测试 |
+| **标定工具** | test_calibration.py | 标定工具测试 (8/8 passed) |
 
 ### 运行测试
 
@@ -353,6 +368,8 @@ tool_params = {
 - **图像缓存**: 避免重复处理，提升响应速度
 - **内存管理**: 修复斑点分析、相机模块内存泄漏
 - **QTimer**: 使用Qt定时器实现连续运行，避免线程安全问题
+- **内存池 (ImageBufferPool)**: 预分配图像缓冲区，提升118x分配速度
+- **确定性流水线 (DeterministicPipeline)**: 多线程并行处理，保证结果一致性
 
 ### 4. 设备集成
 - **海康MVS SDK**: 完整相机功能支持，包括相机参数设置
@@ -371,20 +388,35 @@ tool_params = {
 2. **导出代码功能**: 未在其它电脑测试，只在本地电脑测试
 3. **性能监控**: 性能监控面板功能待完善
 4. **新增外观缺陷和表面缺陷检测**： 两个算法模块并未实际测试
-5. **结果面板**: 算法结果无法根据模块显示
-6. **拖拽算法模块**: ✅ 已修复 - 多次拖拽位置精确跟随鼠标
-7. **数据模块**: 发送数据和接收数据功能已可用
-8. **相机参数设置**: ✅ 已修复 - 相机设置对话框功能已完善
-9. **图像计算归一化**: ✅ 已修复 - 相同图像归一化后显示灰色而非黑色
-10. **流程标签同步**: ✅ 已修复 - 橙色流程标签随流程切换自动更新
-11. **导入顺序规范化**: ✅ 已修复 - 38个文件导入顺序优化
-12. **Qt兼容性问题**: ✅ 已解决 - 添加PySide6兼容性层
-12. **通讯模块**： 未知bug，进行通信连接后程序总会卡顿，无响应。
+5. **标定模块**: 仅通过案例测试 (test_calibration.py 8/8 passed)，未进行实际现场测试验证
+6. **结果面板**: 算法结果无法根据模块显示
+7. **拖拽算法模块**: ✅ 已修复 - 多次拖拽位置精确跟随鼠标
+8. **数据模块**: 发送数据和接收数据功能任不完善
+9. **相机参数设置**: ✅ 已修复 - 相机设置对话框功能已完善
+10. **图像计算归一化**: ✅ 已修复 - 相同图像归一化后显示灰色而非黑色
+11. **流程标签同步**: ✅ 已修复 - 橙色流程标签随流程切换自动更新
+12. **导入顺序规范化**: ✅ 已修复 - 38个文件导入顺序优化
+13. **Qt兼容性问题**: ✅ 已解决 - 添加PySide6兼容性层
+14. **通讯模块**： ✅ 已修复 - 目前能正常添加通讯模块，任未完善
 
 
 ## 📝 更新日志
 
 ### 2026-02-03
+- ✅ **性能优化: 内存池 + 确定性流水线**
+  - 新增 `core/memory_pool.py` - ImageBufferPool 内存池
+    - 预分配固定大小图像内存，避免频繁malloc/free
+    - 线程安全，使用Queue实现缓冲区管理
+    - 使用id()跟踪使用中缓冲区
+    - 性能提升: **118x** 内存分配速度
+  - 新增 `core/pipeline.py` - DeterministicPipeline 流水线
+    - 生产者-消费者模式，严格顺序处理
+    - 每个阶段独立线程，无共享状态
+    - 队列大小限制，防止内存爆炸
+    - 自动帧ID管理，保持处理顺序
+  - 集成到 `ImageData` - 自动使用内存池，析构时自动释放
+  - 集成到 `Solution` - `enable_pipeline_mode(buffer_size=N)` 启用流水线
+  - 新增测试: 10/10 tests passed
 - ✅ ImageData __slots__内存优化 - 创建速度提升11%，复制速度提升29%
 - ✅ 新建PySide6兼容性层 (ui/qt_compat.py)
   - 统一PyQt5/PyQt6/PySide6 API
@@ -396,6 +428,11 @@ tool_params = {
   - 橙色流程标签随切换自动更新
   - 工具在不同流程间隔离保存
 - ✅ 所有核心测试通过 (17/17 tests passed)
+- ✅ 新增标定工具 (tools/vision/calibration.py)
+  - 支持手动标定、棋盘格标定、圆点标定
+  - 像素坐标与物理尺寸相互转换
+  - 多单位支持 (mm/inch/um)
+  - 测试用例: 8/8 passed (仅案例测试，未现场验证)
 
 ### 2026-02-02
 - ✅ 修复方案导入功能 - 导入后自动加载到编辑器

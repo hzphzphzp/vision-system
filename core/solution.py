@@ -39,6 +39,7 @@ except ImportError:
 from core.procedure import Procedure, ProcedureManager
 from data.image_data import ImageData
 from utils.exceptions import SolutionException
+from core.pipeline import DeterministicPipeline, PipelineStage
 
 
 class SolutionState(Enum):
@@ -137,6 +138,12 @@ class Solution:
         self._execution_time = 0.0
         self._current_input: Optional[ImageData] = None
         self._solution_path: Optional[str] = None  # 添加方案路径属性
+
+        # 流水线相关
+        self._pipeline: Optional[DeterministicPipeline] = None
+        self._pipeline_mode = False
+        self._pipeline_buffer_size = 3
+        self._results: Dict = {}
 
         self._callback = SolutionCallback()
         self._logger = logging.getLogger(f"Solution.{self._name}")
@@ -276,6 +283,9 @@ class Solution:
         Returns:
             执行结果字典
         """
+        if self._pipeline_mode and self._pipeline is not None:
+            return self._run_pipeline(input_data)
+        
         if self._state == SolutionState.CONTINUOUS_RUN:
             self._logger.warning("连续运行中，请先停止")
             return {"error": "连续运行中，请先停止"}
@@ -333,6 +343,80 @@ class Solution:
 
             return {"error": self._last_error}
 
+    def enable_pipeline_mode(self, buffer_size: int = 3) -> None:
+        """启用流水线处理模式
+        
+        Args:
+            buffer_size: 流水线缓冲区大小
+        """
+        self._pipeline_mode = True
+        self._pipeline_buffer_size = buffer_size
+        
+        # 创建流水线
+        self._pipeline = DeterministicPipeline(max_pipeline_depth=buffer_size)
+        
+        # 阶段1: 执行流程
+        def execute_stage(frame):
+            results = {}
+            for proc in self._procedure_manager.procedures:
+                if proc.is_enabled:
+                    result = proc.run(frame.data)
+                    results[proc.name] = result
+            return results
+        
+        stage = PipelineStage("execute", execute_stage,
+                             output_callback=self._on_pipeline_output)
+        self._pipeline.add_stage(stage)
+        
+        self._logger.info(f"流水线模式已启用，缓冲区大小: {buffer_size}")
+    
+    def _on_pipeline_output(self, frame, result):
+        """流水线输出回调"""
+        self._results[frame.frame_id] = {
+            "frame_id": frame.frame_id,
+            "timestamp": frame.timestamp,
+            "result": result
+        }
+    
+    def put_input(self, image_data: ImageData) -> bool:
+        """放入输入图像(流水线模式)
+        
+        Args:
+            image_data: 图像数据
+            
+        Returns:
+            是否成功放入
+        """
+        if not self._pipeline_mode or self._pipeline is None:
+            raise RuntimeError("Pipeline mode not enabled")
+        
+        return self._pipeline.put_frame(image_data)
+    
+    def _run_pipeline(self, input_data: ImageData = None) -> Dict:
+        """流水线模式运行"""
+        if self._pipeline is None:
+            return {}
+        
+        # 启动流水线
+        self._pipeline.start()
+        
+        try:
+            if input_data is not None:
+                # 放入输入数据
+                self.put_input(input_data)
+                
+                # 等待处理完成
+                time.sleep(0.1)
+                
+                # 返回最新结果
+                if self._results:
+                    latest_id = max(self._results.keys())
+                    return self._results[latest_id]
+            
+            return {}
+        finally:
+            self._pipeline.stop()
+
     def runing(self):
         """
         连续运行方案
@@ -375,16 +459,12 @@ class Solution:
                 # 执行方案
                 self.run()
 
-                # 等待间隔 - 使用QTimer替代time.sleep避免阻塞
+                # 等待间隔 - 使用time.sleep避免Qt线程问题
                 elapsed = time.time() - start_time
                 sleep_time = max(0, interval_sec - elapsed)
 
-                # 使用QTimer.singleShot实现非阻塞等待
                 if sleep_time > 0:
-                    # 创建一个QEventLoop来等待，但不阻塞主线程
-                    wait_loop = QEventLoop()
-                    QTimer.singleShot(int(sleep_time * 1000), wait_loop.quit)
-                    wait_loop.exec_()
+                    time.sleep(sleep_time)
 
             except Exception as e:
                 self._logger.error(f"连续运行出错: {e}")

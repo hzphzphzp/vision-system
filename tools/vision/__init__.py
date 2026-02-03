@@ -11,9 +11,11 @@ from .appearance_detection import AppearanceDetector, SurfaceDefectDetector
 from .template_match import GrayMatch, ShapeMatch, LineFind, CircleFind
 from .image_filter import BoxFilter, MeanFilter, GaussianFilter, MedianFilter, BilateralFilter, Morphology, ImageResize
 from .image_stitching import ImageStitchingTool
+from .image_calculation import ImageCalculationTool, ImageAddTool, ImageSubtractTool, ImageBlendTool
 from .ocr import OCRReader, OCREnglish
 from .recognition import BarcodeReader, QRCodeReader
 from .cpu_optimization import CPUDetector
+from .calibration import CalibrationTool
 
 __all__ = [
     'AppearanceDetector',
@@ -30,9 +32,14 @@ __all__ = [
     'Morphology',
     'ImageResize',
     'ImageStitchingTool',
+    'ImageCalculationTool',
+    'ImageAddTool',
+    'ImageSubtractTool',
+    'ImageBlendTool',
     'OCRReader',
     'OCREnglish',
     'BarcodeReader',
     'QRCodeReader',
-    'CPUDetector'
+    'CPUDetector',
+    'CalibrationTool'
 ]

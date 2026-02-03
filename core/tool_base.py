@@ -216,6 +216,7 @@ MORPH_OPERATION_CHINESE_NAMES = {
 TOOL_CATEGORY_CHINESE_NAMES = {
     "ImageSource": "图像源",
     "ImageFilter": "图像滤波",
+    "ImageProcessing": "图像处理",
     "Vision": "视觉检测",
     "Measurement": "尺寸测量",
     "Recognition": "模式识别",

@@ -98,10 +98,10 @@ class CPUDetector(VisionAlgorithmToolBase):
             max_value=0.99,
         ),
         "nms_threshold": ToolParameter(
-            name="NMS阈值",
+            name="IOU阈值(NMS)",
             param_type="float",
             default=0.45,
-            description="非极大值抑制阈值",
+            description="非极大值抑制的IOU阈值（新版本YOLO中使用）",
             min_value=0.01,
             max_value=0.99,
         ),

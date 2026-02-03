@@ -2,6 +2,11 @@
 # 
 # This file contains all the Python dependencies needed for the Vision System
 # Updated: 2026-02-03
+# 
+# IMPORTANT: NumPy 2.x Compatibility Notes:
+# - PyTorch 2.2+ supports NumPy 2.x
+# - Ultralytics 8.3.0+ supports NumPy 2.x
+# - All packages must be compatible with NumPy 2.x
 
 # =============================================================================
 # Qt Framework (Choose ONE of the following)
@@ -18,7 +23,7 @@ PySide6>=6.0.0
 # =============================================================================
 # Core dependencies
 # =============================================================================
-numpy>=1.26.4,<2.0.0
+numpy>=2.0.0  # NumPy 2.x is now supported with updated packages
 opencv-python>=4.5.0
 opencv-contrib-python>=4.5.0
 
@@ -43,13 +48,13 @@ mypy>=1.0.0
 # =============================================================================
 # Additional image processing libraries
 # =============================================================================
-Pillow>=9.0.0
+Pillow>=10.0.0  # Updated for NumPy 2.x compatibility
 scikit-image>=0.19.0
 
 # =============================================================================
 # Data analysis
 # =============================================================================
-pandas>=1.5.0
+pandas>=2.0.0  # Updated for NumPy 2.x compatibility
 matplotlib>=3.5.0
 
 # =============================================================================
@@ -64,9 +69,9 @@ pyyaml>=6.0
 easyocr>=1.7.2
 
 # PyTorch - required by EasyOCR (CPU version)
-# IMPORTANT: Use specific versions compatible with numpy 1.26.x
-torch>=2.1.0,<2.2.0
-torchvision>=0.16.0,<0.17.0
+# IMPORTANT: PyTorch 2.2+ supports NumPy 2.x
+torch>=2.2.0
+torchvision>=0.17.0
 
 # python-bidi - required by EasyOCR for text layout
 python-bidi>=0.6.3
@@ -75,7 +80,8 @@ python-bidi>=0.6.3
 # Optional: Deep Learning (for YOLO26)
 # =============================================================================
 # Ultralytics YOLO26 - for object detection
-ultralytics>=8.4.7
+# IMPORTANT: Use version 8.3.0+ for NumPy 2.x compatibility
+ultralytics>=8.3.0
 
 # =============================================================================
 # Optional: PaddlePaddle (for PaddleOCR)

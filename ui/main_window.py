@@ -2209,7 +2209,7 @@ class MainWindow(QMainWindow):
         # 从当前流程中移除工具
         if self.current_procedure:
             try:
-                self.current_procedure.remove_tool(tool)
+                self.current_procedure.remove_tool(tool.name)
                 self._logger.info(f"[MAIN] 从流程中移除工具: {tool.tool_name}")
             except Exception as e:
                 self._logger.error(f"[MAIN] 从流程中移除工具失败: {e}")

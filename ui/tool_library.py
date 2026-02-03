@@ -460,6 +460,14 @@ class ToolLibraryWidget(QWidget):
             ToolItemData(
                 "ImageFilter", "图像缩放", "图像缩放", "🌀", "调整图像大小"
             ),
+            # 图像处理工具
+            ToolItemData(
+                "ImageProcessing",
+                "图像计算",
+                "图像计算",
+                "➕",
+                "对两幅图像进行数学计算（加法、减法、乘法、除法、融合等）",
+            ),
             ToolItemData(
                 "Vision", "灰度匹配", "灰度匹配", "🎯", "基于灰度模板匹配目标"
             ),
@@ -544,6 +552,13 @@ class ToolLibraryWidget(QWidget):
                 "表面缺陷检测",
                 "🔬",
                 "高精度表面缺陷检测，支持多尺度分析和自适应阈值",
+            ),
+            ToolItemData(
+                "Vision",
+                "标定",
+                "标定",
+                "📐",
+                "像素坐标和尺寸转换为物理尺寸，支持手动标定和棋盘格标定",
             ),
         ]
 

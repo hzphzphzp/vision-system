@@ -13,6 +13,7 @@ Date: 2025-01-04
 import os
 import sys
 import time
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
@@ -22,12 +23,26 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 
-# 导入cv2用于图像处理
-try:
-    import cv2
-except ImportError:
-    import warnings
-    warnings.warn("OpenCV未安装，ImageData的某些功能将不可用")
+# 延迟导入内存池，避免循环导入
+def _get_memory_pool_class():
+    """延迟导入ImageBufferPool"""
+    from core.memory_pool import ImageBufferPool
+    return ImageBufferPool
+
+
+# 全局内存池(单例)
+_global_pool_lock = threading.Lock()
+_global_pool = None
+
+
+def get_global_pool(shape=(480, 640, 3), max_size=10):
+    """获取全局图像内存池"""
+    global _global_pool
+    with _global_pool_lock:
+        if _global_pool is None:
+            ImageBufferPool = _get_memory_pool_class()
+            _global_pool = ImageBufferPool(max_size=max_size, buffer_shape=shape)
+        return _global_pool
 
 
 class PixelFormat(Enum):
@@ -127,7 +142,8 @@ class ImageData:
 
     __slots__ = (
         '_data', '_timestamp', '_roi', '_camera_id', '_pixel_format',
-        '_image_type', '_metadata', '_height', '_width', '_channels'
+        '_image_type', '_metadata', '_height', '_width', '_channels',
+        '_pool', '_use_pool', '_buffer'
     )
 
     def __init__(
@@ -141,6 +157,7 @@ class ImageData:
         camera_id: str = None,
         pixel_format: PixelFormat = None,
         image_type: ImageDataType = None,
+        _pool = None,
     ):
         """
         初始化图像数据
@@ -155,8 +172,32 @@ class ImageData:
             camera_id: 相机ID
             pixel_format: 像素格式
             image_type: 图像类型
+            _pool: 可选的内存池(内部使用)
         """
-        self._data = data.copy() if data is not None else None
+        self._use_pool = False
+        self._pool = None
+        
+        # 使用内存池获取缓冲区
+        if data is not None and _pool is not None:
+            self._pool = _pool
+            self._buffer = _pool.acquire()
+            
+            if self._buffer is not None:
+                # 确保形状匹配
+                if data.shape == self._buffer.shape:
+                    np.copyto(self._buffer, data)
+                    self._data = self._buffer
+                    self._use_pool = True
+                else:
+                    # 形状不匹配，回退到普通分配
+                    self._pool.release(self._buffer)
+                    self._data = data.copy()
+            else:
+                # 内存池耗尽，直接分配
+                self._data = data.copy()
+        else:
+            self._data = data.copy() if data is not None else None
+        
         self._timestamp = timestamp or time.time()
         self._roi = roi
         self._camera_id = camera_id
@@ -516,6 +557,12 @@ class ImageData:
 
     def __del__(self):
         """析构函数"""
+        # 如果使用内存池，释放缓冲区
+        if hasattr(self, "_use_pool") and self._use_pool:
+            if hasattr(self, "_pool") and self._pool is not None:
+                if hasattr(self, "_buffer") and self._buffer is not None:
+                    self._pool.release(self._buffer)
+        
         if hasattr(self, "_data"):
             del self._data
 

@@ -407,38 +407,53 @@ class SolutionFileManager:
 
         return solution
 
+    def import_solution_package(self, path: str) -> Optional[Solution]:
+        """导入方案包并加载为Solution实例
 
-class CodeGenerator:
-
-    def import_solution_package(self, path: str) -> Optional[Dict[str, Any]]:
-        """导入方案包
-        "
         Args:
             path: 方案包文件路径
 
         Returns:
-            导入的方案数据，失败返回None
+            加载的方案实例，失败返回None
         """
         try:
             if not os.path.exists(path):
+                self._logger.error(f"文件不存在: {path}")
                 return None
 
+            # 根据文件扩展名选择加载方式
             if path.endswith(".vmsol"):
-                return self._load_vmsol(path)
+                data = self._load_vmsol(path)
+            elif path.endswith(".json"):
+                data = self._load_json(path)
+            elif path.endswith(".yaml") or path.endswith(".yml"):
+                data = self._load_yaml(path)
+            elif path.endswith(".pickle") or path.endswith(".pkl"):
+                data = self._load_pickle(path)
             else:
-                # 尝试其他格式
+                # 尝试所有格式
                 data = (
                     self._load_json(path)
                     or self._load_yaml(path)
                     or self._load_pickle(path)
+                    or self._load_vmsol(path)
                 )
-                return data
+
+            if data:
+                # 从数据创建Solution实例
+                solution = self._create_solution_from_data(data)
+                self._logger.info(f"方案包已导入并加载: {path}")
+                return solution
+            else:
+                self._logger.error(f"无法解析方案包: {path}")
+                return None
 
         except Exception as e:
-            print(f"导入方案包失败: {e}")
+            self._logger.error(f"导入方案包失败: {e}")
             return None
 
-    """代码生成器"""
+
+class CodeGenerator:
 
     def __init__(self):
         self._logger = logging.getLogger("CodeGenerator")
