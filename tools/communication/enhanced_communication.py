@@ -75,11 +75,13 @@ class SendDataTool(ToolBase):
         # 连接选择（动态加载可用连接）
         available_connections = self._get_available_connections()
         self.set_param("连接ID", "",
+                      param_type="enum",
                       options=available_connections if available_connections else ["无可用连接"],
                       description="选择已有的通讯连接")
 
         # 数据配置
         self.set_param("发送格式", "JSON",
+                      param_type="enum",
                       options=["JSON", "ASCII", "HEX", "二进制"],
                       description="发送数据格式")
         self.set_param("选择数据", "",
@@ -87,6 +89,7 @@ class SendDataTool(ToolBase):
 
         # 发送控制
         self.set_param("发送条件", "总是",
+                      param_type="enum",
                       options=["总是", "成功时", "失败时"],
                       description="发送触发条件")
         self.set_param("仅发送变化的数据", False, description="是否只发送变化的数据")
@@ -356,11 +359,13 @@ class ReceiveDataTool(ToolBase):
         # 连接选择（动态加载可用连接）
         available_connections = self._get_available_connections()
         self.set_param("连接ID", "",
+                      param_type="enum",
                       options=available_connections if available_connections else ["无可用连接"],
                       description="选择已有的通讯连接ID")
 
         # 接收配置
         self.set_param("输出格式", "JSON",
+                      param_type="enum",
                       options=["JSON", "字符串", "整数", "浮点数", "HEX", "字节"],
                       description="接收数据的解析格式")
         self.set_param("超时时间", 5.0,

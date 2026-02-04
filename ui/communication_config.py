@@ -321,7 +321,7 @@ class ConnectionConfigDialog(QDialog):
         self.setModal(True)
         self.resize(500, 400)
 
-        self.connection_manager = ConnectionManager()
+        self.connection_manager = get_connection_manager()
         self.setup_ui()
 
         if connection_id:
