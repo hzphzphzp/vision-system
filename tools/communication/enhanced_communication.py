@@ -89,8 +89,6 @@ class SendDataTool(ToolBase):
                       param_type="enum",
                       options=["JSON", "ASCII", "HEX", "二进制"],
                       description="发送数据格式")
-        self.set_param("选择数据", "",
-                      description='要发送的数据，支持模板选择')
 
         # 发送控制
         self.set_param("发送条件", "总是",
@@ -188,8 +186,8 @@ class SendDataTool(ToolBase):
                     "发送失败次数": self._fail_count
                 }
 
-            # 6. 应用数据映射
-            data_to_send = self._apply_data_mapping(input_data)
+            # 6. 直接使用收集的数据
+            data_to_send = input_data
 
             # 7. 检查数据变化
             only_on_change = self.get_param("仅发送变化的数据", False)
