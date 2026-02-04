@@ -89,6 +89,8 @@ class SendDataTool(ToolBase):
                       param_type="enum",
                       options=["JSON", "ASCII", "HEX", "二进制"],
                       description="发送数据格式")
+        self.set_param("数据模板", "*",
+                      description='发送数据模板，*表示发送所有数据，也可指定字段如"field1,field2"')
 
         # 发送控制
         self.set_param("发送条件", "总是",
@@ -235,17 +237,47 @@ class SendDataTool(ToolBase):
     def _collect_input_data(self) -> Dict[str, Any]:
         """收集上游工具的输入数据"""
         input_data = {}
-        
+
         # 从_result_data获取数据（上游工具的输出）
         if self._result_data:
             try:
                 all_values = self._result_data.get_all_values()
                 if all_values:
-                    input_data.update(all_values)
+                    # 应用数据模板
+                    template = self.get_param("数据模板", "*")
+                    input_data = self._apply_data_template(all_values, template)
             except Exception:
                 pass
-        
+
         return input_data
+
+    def _apply_data_template(self, data: Dict[str, Any], template: str) -> Dict[str, Any]:
+        """应用数据模板"""
+        if not template or template == "*":
+            # 发送所有数据
+            return data
+
+        if template.startswith("{") and template.endswith("}"):
+            # JSON格式的字段映射
+            try:
+                import json
+                mapping = json.loads(template)
+                if isinstance(mapping, dict):
+                    result = {}
+                    for target_field, source_field in mapping.items():
+                        if source_field in data:
+                            result[target_field] = data[source_field]
+                    return result
+            except json.JSONDecodeError:
+                pass
+
+        # 逗号分隔的字段列表
+        fields = [f.strip() for f in template.split(",")]
+        result = {}
+        for field in fields:
+            if field and field in data:
+                result[field] = data[field]
+        return result
 
     def _should_send(self, condition: str, input_data: Dict[str, Any]) -> bool:
         """检查是否应该发送数据"""

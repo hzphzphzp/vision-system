@@ -287,7 +287,11 @@ class ConnectionManager:
                 conn = self._connections[connection_id]
                 if conn.is_connected and conn.protocol_instance:
                     try:
-                        conn.protocol_instance.disconnect()
+                        # 设置停止标志，不等待线程结束
+                        if hasattr(conn.protocol_instance, '_running'):
+                            conn.protocol_instance._running = False
+                        # 清除引用，让线程自然退出
+                        conn.protocol_instance = None
                     except Exception as e:
                         logger.error(f"断开连接失败: {e}")
                 del self._connections[connection_id]
@@ -300,8 +304,19 @@ class ConnectionManager:
         with self._lock:
             if connection_id in self._connections:
                 conn = self._connections[connection_id]
-                # 清除protocol_instance引用，让线程自然结束
-                conn.protocol_instance = None
+                # 停止协议实例的线程
+                if conn.protocol_instance:
+                    try:
+                        # 设置_running为False以停止线程
+                        if hasattr(conn.protocol_instance, '_running'):
+                            conn.protocol_instance._running = False
+                        # 清除socket引用以触发receive()返回
+                        if hasattr(conn.protocol_instance, '_socket'):
+                            conn.protocol_instance._socket = None
+                        # 清除引用
+                        conn.protocol_instance = None
+                    except Exception as e:
+                        logger.debug(f"停止协议线程失败: {e}")
                 del self._connections[connection_id]
                 self._save_connections()
                 return True
@@ -579,15 +594,40 @@ class CommunicationConfigWidget(QWidget):
             return
 
         connection_id = self.connection_table.item(current_row, 0).data(Qt.UserRole)
+        connection = self.connection_manager.get_connection(connection_id)
+        if not connection:
+            QMessageBox.warning(self, "警告", "未找到连接")
+            return
+
+        # 先停止现有连接
+        was_connected = connection.is_connected
+        if was_connected:
+            self.connection_manager.force_remove_connection(connection_id)
+
+        # 打开编辑对话框
         dialog = ConnectionConfigDialog(self, connection_id)
         if dialog.exec_() == QDialog.Accepted:
             connection_data = dialog.get_connection_data()
-            connection = self.connection_manager.get_connection(connection_id)
-            if connection:
-                connection.name = connection_data["name"]
-                connection.protocol_type = connection_data["protocol_type"]
-                connection.config = connection_data["config"]
+
+            # 创建新连接
+            new_connection = ProtocolConnection(
+                id=connection_data["id"],
+                name=connection_data["name"],
+                protocol_type=connection_data["protocol_type"],
+                config=connection_data["config"],
+            )
+
+            # 异步添加新连接
+            if self.connection_manager.add_connection(new_connection):
                 self.refresh_connections()
+                QMessageBox.information(self, "提示", "连接已更新，正在重新建立连接...")
+            else:
+                QMessageBox.warning(self, "警告", "更新连接失败")
+        else:
+            # 如果取消编辑，恢复原有连接（如果之前已连接）
+            if was_connected:
+                self.connection_manager.add_connection(connection)
+            self.refresh_connections()
 
     def delete_connection(self):
         """删除连接"""
@@ -605,7 +645,7 @@ class CommunicationConfigWidget(QWidget):
 
         if reply == QMessageBox.Yes:
             # 直接移除连接，不等待线程结束（避免UI阻塞）
-            if self.connection_manager.force_remove_connection(connection_id):
+            if self.connection_manager.remove_connection(connection_id):
                 self.refresh_connections()
             else:
                 QMessageBox.warning(self, "警告", "删除连接失败")
