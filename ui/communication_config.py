@@ -392,29 +392,6 @@ class ConnectionConfigDialog(QDialog):
         # 默认显示TCP配置，隐藏串口配置
         self.serial_config_group.hide()
 
-        # 数据映射配置组
-        mapping_group = QGroupBox("数据映射配置")
-        mapping_layout = QVBoxLayout()
-
-        mapping_info_layout = QHBoxLayout()
-        mapping_info_layout.addWidget(QLabel("配置发送/接收时的数据字段映射规则"))
-        mapping_info_layout.addStretch()
-
-        mapping_btn = QPushButton("配置数据映射...")
-        mapping_btn.clicked.connect(self.open_data_mapping_editor)
-        mapping_layout.addLayout(mapping_info_layout)
-        mapping_layout.addWidget(mapping_btn)
-
-        # 显示当前映射配置的预览
-        self.mapping_preview = QLineEdit()
-        self.mapping_preview.setReadOnly(True)
-        self.mapping_preview.setPlaceholderText("未配置数据映射")
-        self.mapping_preview.setMaximumHeight(60)
-        mapping_layout.addWidget(self.mapping_preview)
-
-        mapping_group.setLayout(mapping_layout)
-        layout.addWidget(mapping_group)
-
         # 按钮
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.accept)
@@ -431,26 +408,6 @@ class ConnectionConfigDialog(QDialog):
         else:
             self.tcp_config_group.show()
             self.serial_config_group.hide()
-
-    def open_data_mapping_editor(self):
-        """打开数据映射编辑器"""
-        try:
-            from ui.data_mapping_editor import DataMappingSimpleEditor
-
-            current_mapping = self.mapping_preview.text() if hasattr(self, '_current_mapping') and self._current_mapping else ""
-
-            editor = DataMappingSimpleEditor(self, current_mapping)
-            if editor.exec_() == QDialog.Accepted:
-                mapping_json = editor.get_mapping_json()
-                if mapping_json and mapping_json.strip():
-                    self._current_mapping = mapping_json
-                    self.mapping_preview.setText(mapping_json[:100] + "..." if len(mapping_json) > 100 else mapping_json)
-                else:
-                    self._current_mapping = ""
-                    self.mapping_preview.setText("未配置数据映射")
-
-        except ImportError as e:
-            QMessageBox.warning(self, "警告", f"无法打开数据映射编辑器: {str(e)}")
 
     def load_connection(self, connection_id: str):
         """加载连接配置"""
@@ -470,20 +427,6 @@ class ConnectionConfigDialog(QDialog):
                     self.host_edit.setText(config["host"])
                 if "port" in config:
                     self.port_spin.setValue(config["port"])
-
-            # 加载数据映射配置
-            if hasattr(conn, 'config') and "data_mapping" in conn.config:
-                mapping = conn.config["data_mapping"]
-                if mapping:
-                    self._current_mapping = mapping if isinstance(mapping, str) else json.dumps(mapping)
-                    display_text = self._current_mapping[:100] + "..." if len(self._current_mapping) > 100 else self._current_mapping
-                    self.mapping_preview.setText(display_text)
-                else:
-                    self._current_mapping = ""
-                    self.mapping_preview.setText("未配置数据映射")
-            else:
-                self._current_mapping = ""
-                self.mapping_preview.setText("未配置数据映射")
 
     def get_connection_config(self) -> Dict[str, Any]:
         """获取连接配置"""

@@ -79,10 +79,11 @@ class SendDataTool(ToolBase):
                       description="选择已有的通讯连接")
 
         # 数据配置
-        self.set_param("数据格式", "json",
-                      options=["json", "ascii", "hex", "binary"],
+        self.set_param("发送格式", "JSON",
+                      options=["JSON", "ASCII", "HEX", "二进制"],
                       description="发送数据格式")
-        self.set_param("数据映射", "", description='数据映射规则JSON，如{"上游字段": "发送字段"}')
+        self.set_param("选择数据", "",
+                      description='要发送的数据，支持模板选择')
 
         # 发送控制
         self.set_param("发送条件", "总是",
@@ -286,21 +287,24 @@ class SendDataTool(ToolBase):
 
     def _format_data(self, data: Any, format_type: str) -> Any:
         """格式化数据"""
-        if format_type == "json":
+        # 支持中英文格式名称
+        format_lower = format_type.lower()
+        
+        if format_lower == "json":
             if isinstance(data, dict):
                 return json.dumps(data, ensure_ascii=False)
             return json.dumps({"data": data}, ensure_ascii=False)
-        elif format_type == "ascii":
+        elif format_lower == "ascii" or format_lower == "字符串":
             if isinstance(data, str):
                 return data.encode("ascii")
             return str(data).encode("ascii")
-        elif format_type == "hex":
+        elif format_lower == "hex":
             if isinstance(data, str):
                 return data.encode("utf-8").hex().upper()
             elif isinstance(data, bytes):
                 return data.hex().upper()
             return str(data).encode("utf-8").hex().upper()
-        elif format_type == "binary":
+        elif format_lower == "binary" or format_lower == "二进制":
             if isinstance(data, str):
                 return data.encode("utf-8")
             elif isinstance(data, dict):
@@ -356,8 +360,8 @@ class ReceiveDataTool(ToolBase):
                       description="选择已有的通讯连接ID")
 
         # 接收配置
-        self.set_param("输出格式", "json",
-                      options=["json", "string", "int", "float", "hex", "bytes"],
+        self.set_param("输出格式", "JSON",
+                      options=["JSON", "字符串", "整数", "浮点数", "HEX", "字节"],
                       description="接收数据的解析格式")
         self.set_param("超时时间", 5.0,
                       description="接收超时时间（秒）")
@@ -488,34 +492,37 @@ class ReceiveDataTool(ToolBase):
     def _parse_data(self, raw_data: Any, format_type: str) -> Any:
         """解析接收到的数据"""
         try:
-            if format_type == "json":
+            # 支持中英文格式名称
+            format_lower = format_type.lower()
+            
+            if format_lower == "json":
                 if isinstance(raw_data, bytes):
                     return json.loads(raw_data.decode('utf-8'))
                 elif isinstance(raw_data, str):
                     return json.loads(raw_data)
                 return raw_data
 
-            elif format_type == "string":
+            elif format_lower == "string" or format_lower == "字符串":
                 if isinstance(raw_data, bytes):
                     return raw_data.decode('utf-8', errors='replace')
                 return str(raw_data)
 
-            elif format_type == "int":
+            elif format_lower == "int" or format_lower == "整数":
                 if isinstance(raw_data, bytes):
                     return int(raw_data.decode('utf-8').strip())
                 return int(str(raw_data).strip())
 
-            elif format_type == "float":
+            elif format_lower == "float" or format_lower == "浮点数":
                 if isinstance(raw_data, bytes):
                     return float(raw_data.decode('utf-8').strip())
                 return float(str(raw_data).strip())
 
-            elif format_type == "hex":
+            elif format_lower == "hex":
                 if isinstance(raw_data, bytes):
                     return raw_data.hex().upper()
                 return str(raw_data).encode('utf-8').hex().upper()
 
-            elif format_type == "bytes":
+            elif format_lower == "bytes" or format_lower == "字节":
                 if isinstance(raw_data, str):
                     return raw_data.encode('utf-8')
                 return raw_data
