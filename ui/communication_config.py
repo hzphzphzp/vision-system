@@ -281,46 +281,53 @@ class ConnectionManager:
                     self._status_callback(conn)
 
     def remove_connection(self, connection_id: str) -> bool:
-        """移除连接"""
+        """移除连接（异步，不阻塞UI）"""
+        # 先在锁外收集需要的数据，避免在锁内进行复杂操作
+        conn_to_remove = None
+        protocol_to_cleanup = None
+
         with self._lock:
             if connection_id in self._connections:
                 conn = self._connections[connection_id]
-                if conn.is_connected and conn.protocol_instance:
-                    try:
-                        # 设置停止标志，不等待线程结束
-                        if hasattr(conn.protocol_instance, '_running'):
-                            conn.protocol_instance._running = False
-                        # 清除引用，让线程自然退出
-                        conn.protocol_instance = None
-                    except Exception as e:
-                        logger.error(f"断开连接失败: {e}")
+                conn_to_remove = {
+                    'id': conn.id,
+                    'name': conn.name,
+                }
+                protocol_to_cleanup = conn.protocol_instance
                 del self._connections[connection_id]
-                self._save_connections()
-                return True
-            return False
+
+        # 异步清理协议实例（不在锁内执行）
+        if protocol_to_cleanup:
+            def cleanup():
+                try:
+                    # 设置停止标志
+                    if hasattr(protocol_to_cleanup, '_running'):
+                        protocol_to_cleanup._running = False
+                except Exception:
+                    pass
+            cleanup_thread = threading.Thread(target=cleanup, daemon=True)
+            cleanup_thread.start()
+
+        # 异步保存配置
+        self._save_connections_async()
+
+        return conn_to_remove is not None
+
+    def _save_connections_async(self):
+        """异步保存连接配置"""
+        def do_save():
+            try:
+                connections = self.get_all_connections()
+                self._storage.save_connections(connections)
+            except Exception as e:
+                logger.error(f"保存连接失败: {e}")
+
+        save_thread = threading.Thread(target=do_save, daemon=True)
+        save_thread.start()
 
     def force_remove_connection(self, connection_id: str) -> bool:
-        """强制移除连接（不等待线程结束，避免UI阻塞）"""
-        with self._lock:
-            if connection_id in self._connections:
-                conn = self._connections[connection_id]
-                # 停止协议实例的线程
-                if conn.protocol_instance:
-                    try:
-                        # 设置_running为False以停止线程
-                        if hasattr(conn.protocol_instance, '_running'):
-                            conn.protocol_instance._running = False
-                        # 清除socket引用以触发receive()返回
-                        if hasattr(conn.protocol_instance, '_socket'):
-                            conn.protocol_instance._socket = None
-                        # 清除引用
-                        conn.protocol_instance = None
-                    except Exception as e:
-                        logger.debug(f"停止协议线程失败: {e}")
-                del self._connections[connection_id]
-                self._save_connections()
-                return True
-            return False
+        """强制移除连接（已废弃，使用remove_connection）"""
+        return self.remove_connection(connection_id)
 
     def get_connection(self, connection_id: str) -> Optional[ProtocolConnection]:
         """获取连接"""
@@ -594,20 +601,14 @@ class CommunicationConfigWidget(QWidget):
             return
 
         connection_id = self.connection_table.item(current_row, 0).data(Qt.UserRole)
-        connection = self.connection_manager.get_connection(connection_id)
-        if not connection:
-            QMessageBox.warning(self, "警告", "未找到连接")
-            return
-
-        # 先停止现有连接
-        was_connected = connection.is_connected
-        if was_connected:
-            self.connection_manager.force_remove_connection(connection_id)
 
         # 打开编辑对话框
         dialog = ConnectionConfigDialog(self, connection_id)
         if dialog.exec_() == QDialog.Accepted:
             connection_data = dialog.get_connection_data()
+
+            # 先删除旧连接
+            self.connection_manager.remove_connection(connection_id)
 
             # 创建新连接
             new_connection = ProtocolConnection(
@@ -623,11 +624,6 @@ class CommunicationConfigWidget(QWidget):
                 QMessageBox.information(self, "提示", "连接已更新，正在重新建立连接...")
             else:
                 QMessageBox.warning(self, "警告", "更新连接失败")
-        else:
-            # 如果取消编辑，恢复原有连接（如果之前已连接）
-            if was_connected:
-                self.connection_manager.add_connection(connection)
-            self.refresh_connections()
 
     def delete_connection(self):
         """删除连接"""
