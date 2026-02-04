@@ -72,16 +72,45 @@ class SendDataTool(ToolBase):
 
     def _init_params(self):
         """初始化参数"""
-        # 连接选择
-        self.set_param("连接ID", "")  # 连接标识符
-        
+        # 连接选择（动态加载可用连接）
+        available_connections = self._get_available_connections()
+        self.set_param("连接ID", "",
+                      options=available_connections if available_connections else ["无可用连接"],
+                      description="选择已有的通讯连接")
+
         # 数据配置
-        self.set_param("数据格式", "json")  # json/ascii/hex/binary
-        self.set_param("数据映射", "")  # JSON字符串，定义数据映射规则
-        
+        self.set_param("数据格式", "json",
+                      options=["json", "ascii", "hex", "binary"],
+                      description="发送数据格式")
+        self.set_param("数据映射", "", description='数据映射规则JSON，如{"上游字段": "发送字段"}')
+
         # 发送控制
-        self.set_param("发送条件", "总是")  # 总是/成功时/失败时
-        self.set_param("仅发送变化的数据", False)  # 是否只发送变化的数据
+        self.set_param("发送条件", "总是",
+                      options=["总是", "成功时", "失败时"],
+                      description="发送触发条件")
+        self.set_param("仅发送变化的数据", False, description="是否只发送变化的数据")
+
+    def _get_available_connections(self) -> List[str]:
+        """获取可用的连接列表（返回display_name列表）"""
+        try:
+            conn_manager = _get_comm_manager()
+            connections = conn_manager.get_available_connections()
+            return [conn["display_name"] for conn in connections if conn.get("connected")]
+        except Exception as e:
+            print(f"获取可用连接列表失败: {e}")
+            return []
+
+    def _get_connection_by_display_name(self, display_name: str) -> Optional[Any]:
+        """根据显示名称获取连接"""
+        try:
+            conn_manager = _get_comm_manager()
+            connections = conn_manager.get_available_connections()
+            for conn in connections:
+                if conn.get("display_name") == display_name:
+                    return conn_manager.get_connection(conn["name"])
+            return None
+        except Exception:
+            return None
 
     def _run_impl(self):
         """执行发送逻辑"""
@@ -97,9 +126,14 @@ class SendDataTool(ToolBase):
                 }
 
             # 2. 获取连接
+            # 尝试直接使用connection_id查找
             conn_manager = _get_comm_manager()
             connection = conn_manager.get_connection(connection_id)
-            
+
+            # 如果找不到，尝试使用display_name查找
+            if not connection:
+                connection = self._get_connection_by_display_name(connection_id)
+
             if not connection:
                 return {
                     "status": False,
@@ -315,8 +349,11 @@ class ReceiveDataTool(ToolBase):
 
     def _init_params(self):
         """初始化参数"""
-        # 连接选择（关键变更：只选择已有连接，不创建新连接）
-        self.set_param("连接ID", "", description="选择已有的通讯连接ID")
+        # 连接选择（动态加载可用连接）
+        available_connections = self._get_available_connections()
+        self.set_param("连接ID", "",
+                      options=available_connections if available_connections else ["无可用连接"],
+                      description="选择已有的通讯连接ID")
 
         # 接收配置
         self.set_param("输出格式", "json",
@@ -330,6 +367,28 @@ class ReceiveDataTool(ToolBase):
         # 数据提取
         self.set_param("数据提取规则", "",
                       description='从接收数据中提取字段，如{"status": "result.status"}')
+
+    def _get_available_connections(self) -> List[str]:
+        """获取可用的连接列表（返回display_name列表）"""
+        try:
+            conn_manager = _get_comm_manager()
+            connections = conn_manager.get_available_connections()
+            return [conn["display_name"] for conn in connections if conn.get("connected")]
+        except Exception as e:
+            print(f"获取可用连接列表失败: {e}")
+            return []
+
+    def _get_connection_by_display_name(self, display_name: str) -> Optional[Any]:
+        """根据显示名称获取连接"""
+        try:
+            conn_manager = _get_comm_manager()
+            connections = conn_manager.get_available_connections()
+            for conn in connections:
+                if conn.get("display_name") == display_name:
+                    return conn_manager.get_connection(conn["name"])
+            return None
+        except Exception:
+            return None
 
     def _run_impl(self):
         """执行接收逻辑（重构版）"""
@@ -346,6 +405,10 @@ class ReceiveDataTool(ToolBase):
         # 2. 获取已有连接
         conn_manager = _get_comm_manager()
         connection = conn_manager.get_connection(connection_id)
+
+        # 如果找不到，尝试使用display_name查找
+        if not connection:
+            connection = self._get_connection_by_display_name(connection_id)
 
         if not connection:
             return {
