@@ -180,3 +180,42 @@ def test_identity_mapping():
     output = mapper.map(input_data)
     
     assert output["value"] == 42
+
+
+def test_transform_func_exception():
+    """测试转换函数异常处理"""
+    mapper = DataMapper()
+    
+    def failing_transform(x):
+        raise ValueError("Transform error")
+    
+    mapper.add_rule(DataMappingRule(
+        source_field="input",
+        target_field="output",
+        transform_func=failing_transform,
+        default_value="fallback"
+    ))
+    
+    input_data = {"input": "some_value"}
+    output = mapper.map(input_data)
+    
+    # 转换失败时应使用默认值
+    assert output["output"] == "fallback"
+
+
+def test_invalid_nested_path():
+    """测试无效嵌套路径（通过非字典值访问）"""
+    mapper = DataMapper()
+    
+    mapper.add_rule(DataMappingRule(
+        source_field="value.nested",
+        target_field="output",
+        default_value="default"
+    ))
+    
+    # value是字符串而非字典，无法访问nested字段
+    input_data = {"value": "not_a_dict"}
+    output = mapper.map(input_data)
+    
+    # 应该返回默认值
+    assert output["output"] == "default"

@@ -10,8 +10,14 @@ Date: 2026-02-04
 """
 
 import json
+import sys
+import os
 from typing import Any, Callable, Dict, List, Optional, Union
 from dataclasses import dataclass, asdict, field
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from utils.error_management import log_error
 
 
 @dataclass
@@ -149,8 +155,12 @@ class DataMapper:
             if rule.transform_func is not None and value is not None:
                 try:
                     value = rule.transform_func(value)
-                except Exception:
-                    # 转换失败时使用默认值
+                except Exception as e:
+                    # 转换失败时记录错误并使用默认值
+                    log_error(
+                        1001,
+                        f"Transform failed for field '{rule.source_field}': {str(e)}"
+                    )
                     value = rule.default_value
             
             # 设置目标字段
