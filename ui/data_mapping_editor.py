@@ -156,7 +156,16 @@ class DataMappingEditor(QDialog):
         self.table.setRowCount(0)
 
         for source, target in self._mapping.items():
-            self.add_mapping_row(source, target)
+            # 只处理字符串类型的target（简单映射），跳过包含转换函数的复杂映射
+            if isinstance(target, str):
+                self.add_mapping_row(source, target)
+            elif isinstance(target, dict) and "target" in target:
+                # 处理包含转换函数的映射
+                self.add_mapping_row(
+                    source,
+                    target.get("target", ""),
+                    target.get("transform", "")
+                )
 
         self.update_preview()
 
