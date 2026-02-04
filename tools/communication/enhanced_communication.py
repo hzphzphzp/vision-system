@@ -35,9 +35,14 @@ from core.tool_base import ToolBase, ToolParameter, ToolRegistry
 
 
 def _get_comm_manager():
-    """获取通讯管理器"""
-    from tools.communication.communication import get_communication_manager
-    return get_communication_manager()
+    """获取通讯管理器（从UI模块获取单例）"""
+    try:
+        from ui.communication_config import get_connection_manager
+        return get_connection_manager()
+    except ImportError:
+        # 如果UI模块不可用，使用tools中的管理器
+        from tools.communication.communication import get_communication_manager
+        return get_communication_manager()
 
 
 @ToolRegistry.register
@@ -98,8 +103,20 @@ class SendDataTool(ToolBase):
         """获取可用的连接列表（返回display_name列表）"""
         try:
             conn_manager = _get_comm_manager()
-            connections = conn_manager.get_available_connections()
-            return [conn["display_name"] for conn in connections if conn.get("connected")]
+            if hasattr(conn_manager, 'get_available_connections'):
+                connections = conn_manager.get_available_connections()
+                return [conn["display_name"] for conn in connections if conn.get("connected")]
+            elif hasattr(conn_manager, 'get_all_connections'):
+                # 如果只有get_all_connections，遍历获取已连接的
+                connections = conn_manager.get_all_connections()
+                result = []
+                for conn in connections:
+                    if hasattr(conn, 'is_connected') and conn.is_connected:
+                        name = getattr(conn, 'name', getattr(conn, 'id', str(conn)))
+                        protocol = getattr(conn, 'protocol_type', 'TCP')
+                        result.append(f"[{conn.id}] {protocol} - {name}")
+                return result
+            return []
         except Exception as e:
             print(f"获取可用连接列表失败: {e}")
             return []

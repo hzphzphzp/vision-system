@@ -317,6 +317,24 @@ class ConnectionManager:
         with self._lock:
             return list(self._connections.values())
 
+    def get_available_connections(self) -> List[Dict[str, Any]]:
+        """获取可用的连接列表（供工具使用）"""
+        result = []
+        with self._lock:
+            for conn_id, conn in self._connections.items():
+                if conn.is_connected:
+                    config = conn.config if hasattr(conn, 'config') else {}
+                    host = config.get("host", config.get("url", ""))
+                    port = config.get("port", "")
+                    result.append({
+                        "name": conn.name,
+                        "device_id": conn_id,
+                        "protocol_type": conn.protocol_type,
+                        "display_name": f"[{conn_id}] {conn.protocol_type.upper()} - {conn.name} ({host}:{port})",
+                        "connected": True,
+                    })
+        return result
+
     def _save_connections(self):
         """保存连接配置"""
         connections = self.get_all_connections()
