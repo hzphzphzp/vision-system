@@ -287,16 +287,16 @@ class SendDataTool(ToolBase):
 
 @ToolRegistry.register
 class ReceiveDataTool(ToolBase):
-    """接收数据工具
+    """接收数据工具（重构版）
 
-    从外部设备接收数据。
+    从外部设备接收数据。通过连接ID使用已有的通讯连接，
+    专注于数据接收和解析，不负责连接管理。
 
     功能特性:
-    - 支持多种通讯协议：TCP客户端/服务端、串口、WebSocket、Modbus TCP
-    - 多种输出格式：String/Int/Float/Hex/JSON/Bytes
-    - 动态IO类型输出
-    - 超时控制
-    - 连接持久化
+    - 使用已有连接：通过连接ID引用ConnectionManager中的连接
+    - 多种数据格式解析：JSON、String、Int、Float、Hex、Bytes
+    - 数据提取规则：支持从复杂数据中提取特定字段
+    - 超时控制：可配置的接收超时时间
 
     端口:
     - 输出端口: OutputData (接收的数据)
@@ -304,232 +304,213 @@ class ReceiveDataTool(ToolBase):
 
     tool_name = "接收数据"
     tool_category = "Communication"
-    tool_description = "从外部设备接收数据，支持多种协议"
+    tool_description = "从外部设备接收数据，通过连接ID使用已有连接"
 
     def __init__(self, name: str = None):
         super().__init__(name)
-        self._comm_manager = _get_comm_manager()
-        self._protocol = None
-        self._device_id: Optional[int] = None
-        self._received_data: Optional[Any] = None
         self._receive_count = 0
+        self._fail_count = 0
+        self._last_received_data = None
+        self._last_receive_time = 0.0
 
     def _init_params(self):
         """初始化参数"""
-        self.set_param("连接", "__new__")
-        self.set_param("协议类型", "tcp_server")
-        self.set_param("监听地址", "0.0.0.0")
-        self.set_param("监听端口", 8081)
-        self.set_param("波特率", 9600)
-        self.set_param("输出类型", "string")
-        self.set_param("超时时间", 5.0)
-        self.set_param("自动监听", False)
-        self.set_param("最大字节数", 4096)
-        self.set_param("输出键名", "received_data")
-        self.set_param("Modbus地址", 0)
-        self.set_param("读取数量", 1)
+        # 连接选择（关键变更：只选择已有连接，不创建新连接）
+        self.set_param("连接ID", "", description="选择已有的通讯连接ID")
+
+        # 接收配置
+        self.set_param("输出格式", "json",
+                      options=["json", "string", "int", "float", "hex", "bytes"],
+                      description="接收数据的解析格式")
+        self.set_param("超时时间", 5.0,
+                      description="接收超时时间（秒）")
+        self.set_param("缓冲区大小", 4096,
+                      description="接收缓冲区大小（字节）")
+
+        # 数据提取
+        self.set_param("数据提取规则", "",
+                      description='从接收数据中提取字段，如{"status": "result.status"}')
 
     def _run_impl(self):
-        """执行接收逻辑"""
-        auto_listen = self.get_param("自动监听", False)
-
-        if auto_listen and not self._protocol:
-            self._setup_connection()
-
-        if self._protocol and self._protocol.is_connected():
-            return self._receive_data()
-        else:
+        """执行接收逻辑（重构版）"""
+        # 1. 检查连接ID
+        connection_id = self.get_param("连接ID", "")
+        if not connection_id:
             return {
                 "status": False,
-                "message": "未连接",
-                "接收次数": self._receive_count
+                "message": "未选择通讯连接，请在参数中选择已建立的连接",
+                "接收成功次数": self._receive_count,
+                "接收失败次数": self._fail_count
             }
 
-    def _setup_connection(self) -> bool:
-        """设置连接"""
+        # 2. 获取已有连接
+        conn_manager = _get_comm_manager()
+        connection = conn_manager.get_connection(connection_id)
+
+        if not connection:
+            return {
+                "status": False,
+                "message": f"未找到连接 {connection_id}，请先在通讯配置中建立连接",
+                "接收成功次数": self._receive_count,
+                "接收失败次数": self._fail_count
+            }
+
+        # 3. 检查连接状态
+        protocol_instance = connection.protocol_instance
+        if not protocol_instance or not protocol_instance.is_connected():
+            return {
+                "status": False,
+                "message": f"连接 {connection.name} 未建立，请先连接",
+                "接收成功次数": self._receive_count,
+                "接收失败次数": self._fail_count
+            }
+
+        # 4. 检查接收接口
+        if not hasattr(protocol_instance, 'receive'):
+            return {
+                "status": False,
+                "message": f"连接 {connection.name} 无接收接口",
+                "接收成功次数": self._receive_count,
+                "接收失败次数": self._fail_count
+            }
+
+        # 5. 从已有连接接收数据
         try:
-            connection = self.get_param("连接", "__new__")
-
-            if connection != "__new__":
-                try:
-                    device_id = int(connection)
-                    self._device_id = device_id
-                    self._protocol = self._comm_manager.get_connection_by_device_id(device_id)
-                    if self._protocol and self._protocol.is_connected():
-                        return True
-                except ValueError:
-                    pass
-
-            # 创建新连接
-            protocol_type = self.get_param("协议类型", "tcp_server")
-            host = self.get_param("监听地址", "0.0.0.0")
-            port = self.get_param("监听端口", 8081)
-            baudrate = self.get_param("波特率", 9600)
-
-            config = self._build_config(protocol_type, host, port, baudrate)
-            connection_name = f"{protocol_type}_{host}_{port}"
-
-            self._protocol = self._comm_manager.create_connection(
-                connection_name, protocol_type, config
-            )
-
-            if self._protocol:
-                self._device_id = self._comm_manager.get_device_id(connection_name)
-
-            return bool(self._protocol and self._protocol.is_connected())
-
-        except Exception:
-            return False
-
-    def _build_config(
-        self, protocol_type: str, host: str, port: int, baudrate: int
-    ) -> Dict:
-        """构建接收配置"""
-        timeout = self.get_param("超时时间", 5.0)
-
-        if protocol_type == "tcp_server":
-            return {"host": host, "port": port, "timeout": timeout}
-        elif protocol_type == "tcp_client":
-            return {"host": host, "port": port, "timeout": timeout}
-        elif protocol_type == "serial":
-            return {"port": host, "baudrate": baudrate}
-        elif protocol_type == "websocket":
-            return {"url": f"ws://{host}:{port}"}
-        elif protocol_type == "modbus_tcp":
-            return {"host": host, "port": port, "unit_id": 1, "timeout": timeout}
-        else:
-            return {"host": host, "port": port}
-
-    def _receive_data(self) -> Dict:
-        """接收数据"""
-        try:
-            output_type = self.get_param("输出类型", "string")
             timeout = self.get_param("超时时间", 5.0)
-            max_bytes = self.get_param("最大字节数", 4096)
-
-            raw_data = self._protocol.receive(timeout) if self._protocol else None
+            raw_data = protocol_instance.receive(timeout)
 
             if raw_data is None:
+                self._fail_count += 1
                 return {
                     "status": False,
-                    "message": "接收超时",
-                    "接收次数": self._receive_count,
-                    "设备ID": self._device_id
+                    "message": "接收超时，未收到数据",
+                    "接收成功次数": self._receive_count,
+                    "接收失败次数": self._fail_count
                 }
 
-            self._received_data = self._parse_data(raw_data, output_type)
-            self._receive_count += 1
+            # 6. 解析数据
+            format_type = self.get_param("输出格式", "json")
+            parsed_data = self._parse_data(raw_data, format_type)
 
+            # 7. 应用数据提取规则
+            extracted_data = self._extract_data(parsed_data)
+
+            # 8. 更新统计
+            self._receive_count += 1
+            self._last_received_data = extracted_data
+            self._last_receive_time = time.time()
+
+            # 9. 构建输出
             result = {
                 "status": True,
-                "message": "接收成功",
-                "接收数据": self._received_data,
-                "接收次数": self._receive_count,
-                "输出类型": output_type,
-                "设备ID": self._device_id
+                "message": f"从 {connection.name} 接收到数据",
+                "接收成功次数": self._receive_count,
+                "接收失败次数": self._fail_count,
+                "接收数据": extracted_data,
+                "OutputStatus": True,
+                "OutputData": extracted_data
             }
-
-            # 添加动态IO输出
-            result["OutputInt"] = self._get_output_int()
-            result["OutputFloat"] = self._get_output_float()
-            result["OutputString"] = self._get_output_string()
-            result["OutputHex"] = self._get_output_hex()
-            result["OutputByteArray"] = self._get_output_bytes()
 
             return result
 
         except Exception as e:
+            self._fail_count += 1
             return {
                 "status": False,
-                "message": f"接收失败: {str(e)}",
-                "接收次数": self._receive_count
+                "message": f"接收异常：{str(e)}",
+                "接收成功次数": self._receive_count,
+                "接收失败次数": self._fail_count
             }
 
-    def _parse_data(self, raw_data: Any, output_type: str) -> Any:
-        """解析数据"""
-        if output_type == "json":
-            if isinstance(raw_data, bytes):
-                try:
-                    return json.loads(raw_data.decode("utf-8"))
-                except json.JSONDecodeError:
-                    return raw_data.decode("utf-8", errors="replace")
-            elif isinstance(raw_data, str):
-                try:
+    def _parse_data(self, raw_data: Any, format_type: str) -> Any:
+        """解析接收到的数据"""
+        try:
+            if format_type == "json":
+                if isinstance(raw_data, bytes):
+                    return json.loads(raw_data.decode('utf-8'))
+                elif isinstance(raw_data, str):
                     return json.loads(raw_data)
-                except json.JSONDecodeError:
-                    return raw_data
-            return raw_data
-        elif output_type == "int":
-            try:
+                return raw_data
+
+            elif format_type == "string":
                 if isinstance(raw_data, bytes):
-                    return int(raw_data.decode("utf-8").strip())
+                    return raw_data.decode('utf-8', errors='replace')
+                return str(raw_data)
+
+            elif format_type == "int":
+                if isinstance(raw_data, bytes):
+                    return int(raw_data.decode('utf-8').strip())
                 return int(str(raw_data).strip())
-            except (ValueError, TypeError):
-                return 0
-        elif output_type == "float":
-            try:
+
+            elif format_type == "float":
                 if isinstance(raw_data, bytes):
-                    return float(raw_data.decode("utf-8").strip())
+                    return float(raw_data.decode('utf-8').strip())
                 return float(str(raw_data).strip())
-            except (ValueError, TypeError):
-                return 0.0
-        elif output_type == "hex":
-            if isinstance(raw_data, bytes):
-                return raw_data.hex().upper()
-            return str(raw_data).encode("utf-8").hex().upper()
-        else:
-            if isinstance(raw_data, bytes):
-                return raw_data.decode("utf-8", errors="replace")
+
+            elif format_type == "hex":
+                if isinstance(raw_data, bytes):
+                    return raw_data.hex().upper()
+                return str(raw_data).encode('utf-8').hex().upper()
+
+            elif format_type == "bytes":
+                if isinstance(raw_data, str):
+                    return raw_data.encode('utf-8')
+                return raw_data
+
+            else:
+                return raw_data
+
+        except Exception as e:
             return raw_data
 
-    def _get_output_int(self) -> int:
-        """获取整型输出"""
+    def _extract_data(self, data: Any) -> Any:
+        """根据规则提取数据"""
+        extract_rules = self.get_param("数据提取规则", "")
+
+        if not extract_rules:
+            return data
+
         try:
-            if isinstance(self._received_data, (int, float)):
-                return int(self._received_data)
-            return int(str(self._received_data).strip())
-        except (ValueError, TypeError):
-            return 0
+            import json
+            rules = json.loads(extract_rules)
 
-    def _get_output_float(self) -> float:
-        """获取浮点型输出"""
-        try:
-            if isinstance(self._received_data, (int, float)):
-                return float(self._received_data)
-            return float(str(self._received_data).strip())
-        except (ValueError, TypeError):
-            return 0.0
+            if not isinstance(data, dict):
+                return data
 
-    def _get_output_string(self) -> str:
-        """获取字符串输出"""
-        if isinstance(self._received_data, str):
-            return self._received_data
-        elif isinstance(self._received_data, bytes):
-            return self._received_data.decode("utf-8", errors="replace")
-        return str(self._received_data)
+            result = {}
+            for target_field, source_path in rules.items():
+                value = self._get_nested_value(data, source_path)
+                if value is not None:
+                    result[target_field] = value
 
-    def _get_output_hex(self) -> str:
-        """获取HEX输出"""
-        if isinstance(self._received_data, bytes):
-            return self._received_data.hex().upper()
-        if isinstance(self._received_data, str):
-            return self._received_data.encode("utf-8").hex().upper()
-        return str(self._received_data).encode("utf-8").hex().upper()
+            return result if result else data
 
-    def _get_output_bytes(self) -> bytes:
-        """获取二进制输出"""
-        if isinstance(self._received_data, bytes):
-            return self._received_data
-        if isinstance(self._received_data, str):
-            return self._received_data.encode("utf-8")
-        return str(self._received_data).encode("utf-8")
+        except Exception:
+            return data
+
+    def _get_nested_value(self, data: Any, path: str) -> Any:
+        """获取嵌套字段值"""
+        if not isinstance(data, dict):
+            return None
+
+        parts = path.split(".")
+        current = data
+
+        for part in parts:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return None
+
+        return current
 
     def reset(self):
         """重置"""
-        self._received_data = None
         self._receive_count = 0
-        self._device_id = None
-        self._protocol = None
+        self._fail_count = 0
+        self._last_received_data = None
+        self._last_receive_time = 0.0
+        self._received_data = None
         super().reset()
 
 
