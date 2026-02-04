@@ -42,16 +42,17 @@ def _get_comm_manager():
 
 @ToolRegistry.register
 class SendDataTool(ToolBase):
-    """发送数据工具
+    """发送数据工具（重构版）
 
-    将数据发送到外部设备。
+    将数据发送到外部设备。通过连接ID使用已有的通讯连接，
+    专注于数据处理和路由，不负责连接管理。
 
     功能特性:
-    - 支持多种通讯协议：TCP客户端/服务端、串口、WebSocket、Modbus TCP
+    - 使用已有连接：通过连接ID引用ConnectionManager中的连接
+    - 数据映射：支持将上游工具输出映射为发送格式
+    - 发送条件控制：总是/成功时/失败时
+    - 仅发送变化的数据：避免重复发送相同数据
     - 多种数据格式：JSON、ASCII、HEX、二进制
-    - 动态IO类型输出
-    - 设备ID管理
-    - 连接持久化
 
     端口:
     - 输入端口: InputTrigger (触发信号，可选)
@@ -59,196 +60,212 @@ class SendDataTool(ToolBase):
 
     tool_name = "发送数据"
     tool_category = "Communication"
-    tool_description = "发送数据到外部设备，支持多种协议和格式"
+    tool_description = "发送数据到外部设备，通过连接ID使用已有连接"
 
     def __init__(self, name: str = None):
         super().__init__(name)
-        self._comm_manager = _get_comm_manager()
-        self._protocol = None
-        self._device_id: Optional[int] = None
+        self._data_mapper = None  # 数据映射器实例
         self._send_count = 0
         self._fail_count = 0
         self._last_send_time = 0
+        self._last_sent_data = None  # 上次发送的数据，用于变化检测
 
     def _init_params(self):
         """初始化参数"""
-        self.set_param("连接", "__new__")
-        self.set_param("协议类型", "tcp_client")
-        self.set_param("地址", "127.0.0.1")
-        self.set_param("端口", 8080)
-        self.set_param("波特率", 9600)
-        self.set_param("数据来源", "custom")
-        self.set_param("自定义数据", '{"status": "ok"}')
-        self.set_param("结果键名", "")
-        self.set_param("数据格式", "json")
-        self.set_param("自动发送", False)
-        self.set_param("发送间隔", 1.0)
-        self.set_param("Modbus地址", 0)
-        self.set_param("寄存器数量", 1)
-        self.set_param("拆分发送", False)
-        self.set_param("分隔符", ",")
+        # 连接选择
+        self.set_param("连接ID", "")  # 连接标识符
+        
+        # 数据配置
+        self.set_param("数据格式", "json")  # json/ascii/hex/binary
+        self.set_param("数据映射", "")  # JSON字符串，定义数据映射规则
+        
+        # 发送控制
+        self.set_param("发送条件", "总是")  # 总是/成功时/失败时
+        self.set_param("仅发送变化的数据", False)  # 是否只发送变化的数据
 
     def _run_impl(self):
         """执行发送逻辑"""
-        auto_send = self.get_param("自动发送")
-        data_source = self.get_param("数据来源")
+        try:
+            # 1. 检查连接ID
+            connection_id = self.get_param("连接ID", "")
+            if not connection_id:
+                return {
+                    "status": False,
+                    "message": "未选择连接",
+                    "发送成功次数": self._send_count,
+                    "发送失败次数": self._fail_count
+                }
 
-        if auto_send:
-            return self._handle_auto_send(data_source)
-        else:
-            return self._handle_single_send(data_source)
+            # 2. 获取连接
+            conn_manager = _get_comm_manager()
+            connection = conn_manager.get_connection(connection_id)
+            
+            if not connection:
+                return {
+                    "status": False,
+                    "message": f"未找到连接: {connection_id}",
+                    "发送成功次数": self._send_count,
+                    "发送失败次数": self._fail_count
+                }
+            
+            # 3. 检查连接状态
+            protocol_instance = connection.protocol_instance
+            if not protocol_instance or not protocol_instance.is_connected():
+                return {
+                    "status": False,
+                    "message": "连接未建立",
+                    "发送成功次数": self._send_count,
+                    "发送失败次数": self._fail_count
+                }
 
-    def _handle_single_send(self, data_source: str) -> Dict:
-        """处理单次发送"""
-        data = self._prepare_data(data_source)
-        if data is None:
+            # 4. 收集上游输入数据
+            input_data = self._collect_input_data()
+            if not input_data:
+                input_data = {}
+
+            # 5. 检查发送条件
+            send_condition = self.get_param("发送条件", "总是")
+            if not self._should_send(send_condition, input_data):
+                return {
+                    "status": True,
+                    "message": "不满足发送条件",
+                    "发送成功次数": self._send_count,
+                    "发送失败次数": self._fail_count
+                }
+
+            # 6. 应用数据映射
+            data_to_send = self._apply_data_mapping(input_data)
+
+            # 7. 检查数据变化
+            only_on_change = self.get_param("仅发送变化的数据", False)
+            if only_on_change and self._is_data_unchanged(data_to_send):
+                return {
+                    "status": True,
+                    "message": "数据未变化，跳过发送",
+                    "发送成功次数": self._send_count,
+                    "发送失败次数": self._fail_count
+                }
+
+            # 8. 格式化数据
+            format_type = self.get_param("数据格式", "json")
+            formatted_data = self._format_data(data_to_send, format_type)
+
+            # 9. 发送数据
+            success = protocol_instance.send(formatted_data)
+
+            if success:
+                self._send_count += 1
+                self._last_sent_data = data_to_send.copy() if isinstance(data_to_send, dict) else data_to_send
+                message = "发送成功"
+            else:
+                self._fail_count += 1
+                message = "发送失败"
+
+            return {
+                "status": success,
+                "message": message,
+                "发送成功次数": self._send_count,
+                "发送失败次数": self._fail_count,
+                "连接ID": connection_id,
+                "OutputData": data_to_send
+            }
+
+        except Exception as e:
+            self._fail_count += 1
             return {
                 "status": False,
-                "message": "无可发送的数据",
+                "message": f"发送异常: {str(e)}",
                 "发送成功次数": self._send_count,
                 "发送失败次数": self._fail_count
             }
 
-        success = self._send_data(data)
-
-        if success:
-            self._send_count += 1
-        else:
-            self._fail_count += 1
-
-        return {
-            "status": success,
-            "message": "发送成功" if success else "发送失败",
-            "发送成功次数": self._send_count,
-            "发送失败次数": self._fail_count,
-            "设备ID": self._device_id,
-            "OutputData": data
-        }
-
-    def _handle_auto_send(self, data_source: str) -> Dict:
-        """处理自动发送"""
-        current_time = time.time()
-        send_interval = self.get_param("发送间隔", 1.0)
-
-        if current_time - self._last_send_time < send_interval:
-            return {"status": True, "message": "等待发送间隔"}
-
-        data = self._prepare_data(data_source)
-        if data is None:
-            return {"status": False, "message": "无可发送的数据"}
-
-        success = self._send_data(data)
-        self._last_send_time = current_time
-
-        if success:
-            self._send_count += 1
-        else:
-            self._fail_count += 1
-
-        return {
-            "status": success,
-            "message": "自动发送" + ("成功" if success else "失败"),
-            "发送成功次数": self._send_count,
-            "发送失败次数": self._fail_count
-        }
-
-    def _prepare_data(self, data_source: str) -> Optional[Any]:
-        """准备发送数据"""
-        if data_source == "custom":
-            custom_data = self.get_param("自定义数据", "")
-            format_type = self.get_param("数据格式", "json")
-
+    def _collect_input_data(self) -> Dict[str, Any]:
+        """收集上游工具的输入数据"""
+        input_data = {}
+        
+        # 从_result_data获取数据（上游工具的输出）
+        if self._result_data:
             try:
-                if format_type == "json" and custom_data.startswith("{"):
-                    return json.loads(custom_data)
-                return custom_data
-            except json.JSONDecodeError:
-                return custom_data
-        elif data_source == "result":
-            result_key = self.get_param("结果键名", "")
-            if result_key and self._result_data:
-                return self._result_data.get_value(result_key)
-            elif self._result_data:
-                return self._result_data.get_all_values()
-        return None
+                all_values = self._result_data.get_all_values()
+                if all_values:
+                    input_data.update(all_values)
+            except Exception:
+                pass
+        
+        return input_data
 
-    def _send_data(self, data: Any) -> bool:
-        """发送数据"""
+    def _should_send(self, condition: str, input_data: Dict[str, Any]) -> bool:
+        """检查是否应该发送数据"""
+        if condition == "总是":
+            return True
+        elif condition == "成功时":
+            # 检查是否有result字段且为True
+            result = input_data.get("result", input_data.get("status", False))
+            return bool(result)
+        elif condition == "失败时":
+            # 检查是否有result字段且为False
+            result = input_data.get("result", input_data.get("status", True))
+            return not bool(result)
+        return True
+
+    def _apply_data_mapping(self, input_data: Dict[str, Any]) -> Any:
+        """应用数据映射"""
+        mapping_json = self.get_param("数据映射", "")
+        
+        if not mapping_json:
+            # 没有映射规则，直接返回原始数据
+            return input_data
+        
         try:
-            connection = self.get_param("连接", "__new__")
+            # 解析映射规则
+            mapping_rules = json.loads(mapping_json)
+            
+            # 如果有映射规则，应用映射
+            if isinstance(mapping_rules, dict):
+                from core.data_mapping import DataMapper, DataMappingRule
+                
+                mapper = DataMapper()
+                for source_field, target_field in mapping_rules.items():
+                    rule = DataMappingRule(
+                        source_field=source_field,
+                        target_field=target_field
+                    )
+                    mapper.add_rule(rule)
+                
+                return mapper.map(input_data)
+            
+            return input_data
+        except (json.JSONDecodeError, Exception):
+            # 解析失败，返回原始数据
+            return input_data
 
-            # 使用现有连接或创建新连接
-            if connection != "__new__":
-                try:
-                    device_id = int(connection)
-                    self._device_id = device_id
-                    self._protocol = self._comm_manager.get_connection_by_device_id(device_id)
-                except ValueError:
-                    self._protocol = None
-            else:
-                self._protocol = None
-
-            # 如果没有现有连接，创建新连接
-            if not self._protocol or not self._protocol.is_connected():
-                protocol_type = self.get_param("协议类型", "tcp_client")
-                host = self.get_param("地址", "127.0.0.1")
-                port = self.get_param("端口", 8080)
-
-                config = self._build_config(protocol_type, host, port)
-                connection_name = f"{protocol_type}_{host}_{port}"
-
-                self._protocol = self._comm_manager.create_connection(
-                    connection_name, protocol_type, config
-                )
-
-                if self._protocol:
-                    self._device_id = self._comm_manager.get_device_id(connection_name)
-
-            # 发送数据
-            if self._protocol and self._protocol.is_connected():
-                format_type = self.get_param("数据格式", "json")
-                formatted_data = self._format_data(data, format_type)
-                return self._protocol.send(formatted_data)
-
+    def _is_data_unchanged(self, data: Any) -> bool:
+        """检查数据是否未变化"""
+        if self._last_sent_data is None:
             return False
-
-        except Exception:
-            self._fail_count += 1
-            return False
-
-    def _build_config(self, protocol_type: str, host: str, port: int) -> Dict:
-        """构建通讯配置"""
-        baudrate = self.get_param("波特率", 9600)
-
-        if protocol_type == "tcp_client":
-            return {"host": host, "port": port, "timeout": 5.0}
-        elif protocol_type == "tcp_server":
-            return {"host": host, "port": port, "max_connections": 5}
-        elif protocol_type == "serial":
-            return {"port": host, "baudrate": baudrate}
-        elif protocol_type == "websocket":
-            return {"url": f"ws://{host}:{port}"}
-        elif protocol_type == "modbus_tcp":
-            return {"host": host, "port": port, "unit_id": 1}
-        else:
-            return {"host": host, "port": port}
+        
+        # 简单比较，对于字典使用字符串化比较
+        if isinstance(data, dict) and isinstance(self._last_sent_data, dict):
+            return json.dumps(data, sort_keys=True) == json.dumps(self._last_sent_data, sort_keys=True)
+        
+        return data == self._last_sent_data
 
     def _format_data(self, data: Any, format_type: str) -> Any:
         """格式化数据"""
         if format_type == "json":
             if isinstance(data, dict):
                 return json.dumps(data, ensure_ascii=False)
-            return str(data)
+            return json.dumps({"data": data}, ensure_ascii=False)
         elif format_type == "ascii":
             if isinstance(data, str):
                 return data.encode("ascii")
             return str(data).encode("ascii")
         elif format_type == "hex":
             if isinstance(data, str):
-                return data.encode("ascii").hex().upper()
+                return data.encode("utf-8").hex().upper()
             elif isinstance(data, bytes):
                 return data.hex().upper()
-            return str(data).encode("ascii").hex().upper()
+            return str(data).encode("utf-8").hex().upper()
         elif format_type == "binary":
             if isinstance(data, str):
                 return data.encode("utf-8")
@@ -263,8 +280,8 @@ class SendDataTool(ToolBase):
         self._send_count = 0
         self._fail_count = 0
         self._last_send_time = 0.0
-        self._device_id = None
-        self._protocol = None
+        self._last_sent_data = None
+        self._data_mapper = None
         super().reset()
 
 
