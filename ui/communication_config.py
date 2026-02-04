@@ -295,6 +295,18 @@ class ConnectionManager:
                 return True
             return False
 
+    def force_remove_connection(self, connection_id: str) -> bool:
+        """强制移除连接（不等待线程结束，避免UI阻塞）"""
+        with self._lock:
+            if connection_id in self._connections:
+                conn = self._connections[connection_id]
+                # 清除protocol_instance引用，让线程自然结束
+                conn.protocol_instance = None
+                del self._connections[connection_id]
+                self._save_connections()
+                return True
+            return False
+
     def get_connection(self, connection_id: str) -> Optional[ProtocolConnection]:
         """获取连接"""
         with self._lock:
@@ -567,14 +579,15 @@ class CommunicationConfigWidget(QWidget):
             return
 
         connection_id = self.connection_table.item(current_row, 0).data(Qt.UserRole)
-        
+
         reply = QMessageBox.question(
             self, "确认", "确定要删除这个连接吗？",
             QMessageBox.Yes | QMessageBox.No
         )
-        
+
         if reply == QMessageBox.Yes:
-            if self.connection_manager.remove_connection(connection_id):
+            # 直接移除连接，不等待线程结束（避免UI阻塞）
+            if self.connection_manager.force_remove_connection(connection_id):
                 self.refresh_connections()
             else:
                 QMessageBox.warning(self, "警告", "删除连接失败")
