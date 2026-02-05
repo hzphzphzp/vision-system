@@ -163,9 +163,9 @@ class TCPServer(ProtocolBase):
             return False
 
     def stop(self):
-        """停止监听"""
+        """停止监听（非阻塞版本）"""
         logger.info("[TCPServer] 开始停止监听...")
-        
+
         with self._clients_lock:
             if not self._running:
                 logger.info("[TCPServer] 已经在停止状态")
@@ -178,52 +178,69 @@ class TCPServer(ProtocolBase):
         self._stop_heartbeat()
         logger.info("[TCPServer] 心跳已停止")
 
-        # 优雅关闭客户端连接
-        client_count = len(self._clients)
-        logger.info(f"[TCPServer] 关闭 {client_count} 个客户端连接...")
-        for client_id in list(self._clients.keys()):
-            self._remove_client(client_id, graceful=True)
-        logger.info("[TCPServer] 所有客户端连接已关闭")
-
-        # 关闭线程池并等待完成
-        if self._thread_pool:
-            logger.info("[TCPServer] 关闭线程池...")
-            # 使用wait=False避免阻塞，cancel_futures=True取消未执行的任务
-            self._thread_pool.shutdown(wait=False, cancel_futures=True)
-            # 给线程池一些时间清理，但不阻塞
-            time.sleep(0.1)
-            del self._thread_pool
-            self._thread_pool = None
-            logger.info("[TCPServer] 线程池已关闭")
-
-        # 关闭服务器 socket
+        # 关闭服务器 socket（在锁外执行）
         if self._server_socket:
             logger.info("[TCPServer] 关闭服务器socket...")
             try:
+                # 设置非阻塞模式，避免close阻塞
+                self._server_socket.setblocking(False)
                 self._server_socket.close()
             except:
                 pass
             self._server_socket = None
             logger.info("[TCPServer] 服务器socket已关闭")
 
-        # 等待监听线程结束
-        if self._listen_thread and self._listen_thread.is_alive():
-            logger.info("[TCPServer] 等待监听线程结束...")
-            self._listen_thread.join(timeout=1.0)
-            self._listen_thread = None
-            logger.info("[TCPServer] 监听线程已清理")
+        # 异步关闭线程池
+        if self._thread_pool:
+            logger.info("[TCPServer] 关闭线程池...")
+            # 使用wait=False避免阻塞，cancel_futures=True取消未执行的任务
+            self._thread_pool.shutdown(wait=False, cancel_futures=True)
+            self._thread_pool = None
+            logger.info("[TCPServer] 线程池已关闭")
 
-        # 清理资源
-        self._receive_queues.clear()
-        self._clients.clear()
-        logger.info("[TCPServer] 已清理接收队列和客户端列表")
-        
+        # 异步清理客户端连接和线程
+        self._cleanup_async()
+
+        # 立即返回，不等待线程结束
         self.set_state(ConnectionState.DISCONNECTED)
         self._emit("on_stop")
         self._emit = lambda *args, **kwargs: None  # 断开回调引用
         self.clear_callbacks()
-        logger.info("[TCPServer] 回调已清除")
         logger.info("[TCPServer] 停止监听完成")
+
+    def _cleanup_async(self):
+        """异步清理资源（不阻塞主线程）"""
+        def cleanup():
+            # 关闭所有客户端连接
+            client_ids = []
+            with self._clients_lock:
+                client_ids = list(self._clients.keys())
+
+            if client_ids:
+                logger.info(f"[TCPServer] 关闭 {len(client_ids)} 个客户端连接...")
+                for client_id in client_ids:
+                    try:
+                        self._remove_client(client_id, graceful=False)
+                    except Exception as e:
+                        logger.debug(f"[TCPServer] 关闭客户端 {client_id} 失败: {e}")
+
+            # 等待监听线程结束
+            if self._listen_thread and self._listen_thread.is_alive():
+                self._listen_thread.join(timeout=0.5)
+                if self._listen_thread.is_alive():
+                    logger.warning("[TCPServer] 监听线程未能及时结束")
+                self._listen_thread = None
+
+            # 清理资源
+            self._receive_queues.clear()
+            with self._clients_lock:
+                self._clients.clear()
+
+            logger.info("[TCPServer] 异步清理完成")
+
+        # 启动后台线程进行清理
+        cleanup_thread = threading.Thread(target=cleanup, daemon=True)
+        cleanup_thread.start()
 
     def disconnect(self):
         """断开连接（别名）"""

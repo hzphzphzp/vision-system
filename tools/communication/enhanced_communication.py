@@ -75,87 +75,414 @@ class SendDataTool(ToolBase):
         self._last_send_time = 0
         self._last_sent_data = None  # 上次发送的数据，用于变化检测
 
+    # 参数定义 - 用于属性面板识别参数类型
+    PARAM_DEFINITIONS = [
+        {
+            "name": "目标连接",
+            "param_type": "enum",
+            "default": "",
+            "description": "选择要发送数据的通讯连接"
+        },
+        {
+            "name": "发送格式",
+            "param_type": "enum",
+            "default": "JSON",
+            "options": ["JSON", "ASCII", "HEX", "二进制"],
+            "description": "发送数据格式"
+        },
+        {
+            "name": "数据内容",
+            "param_type": "data_content",  # 特殊类型：数据内容选择器
+            "default": "",
+            "description": "点击选择要发送的数据（格式：模块名称.结果字段）"
+        },
+        {
+            "name": "发送条件",
+            "param_type": "enum",
+            "default": "总是",
+            "options": ["总是", "成功时", "失败时"],
+            "description": "发送触发条件"
+        },
+        {
+            "name": "仅发送变化的数据",
+            "param_type": "bool",
+            "default": False,
+            "description": "是否只发送变化的数据"
+        }
+    ]
+
     def _init_params(self):
-        """初始化参数"""
-        # 连接选择（动态加载可用连接）
+        """初始化参数（优化版）
+        
+        优化内容：
+        1. 目标连接改为下拉框选择
+        2. 数据内容支持"模块名称.结果字段"格式选择
+        3. 不默认保存"all"
+        4. 只在参数不存在时才设置默认值，避免覆盖用户设置
+        """
+        self._logger.info(f"【_init_params】开始初始化参数，当前参数: {dict(self._params)}")
+        
+        # 连接选择 - 动态加载可用连接的下拉框
         available_connections = self._get_available_connections()
-        self.set_param("连接ID", "",
-                      param_type="enum",
-                      options=available_connections if available_connections else ["无可用连接"],
-                      description="选择已有的通讯连接")
+        self._logger.info(f"【_init_params】可用连接: {available_connections}")
+        
+        # 只在参数不存在或为空时设置默认值
+        current_connection = self._params.get("目标连接", "")
+        self._logger.info(f"【_init_params】当前目标连接值: '{current_connection}'")
+        
+        if not current_connection:
+            self._logger.info(f"【_init_params】目标连接为空，设置默认值")
+            self.set_param("目标连接", "",
+                          param_type="enum",
+                          options=available_connections if available_connections else ["暂无可用连接"],
+                          description="选择要发送数据的通讯连接")
+        else:
+            # 只更新选项列表，不覆盖值
+            self._logger.info(f"【_init_params】目标连接不为空，只更新选项列表")
+            self._params[f"__options_目标连接"] = available_connections if available_connections else ["暂无可用连接"]
+        
+        self._logger.info(f"【_init_params】初始化完成，目标连接值: '{self._params.get('目标连接', '')}'")
 
-        # 数据配置
-        self.set_param("发送格式", "JSON",
-                      param_type="enum",
-                      options=["JSON", "ASCII", "HEX", "二进制"],
-                      description="发送数据格式")
-        self.set_param("数据模板", "*",
-                      description='发送数据模板，*表示发送所有数据，也可指定字段如"field1,field2"')
+        # 数据配置 - 只在不存在时设置默认值
+        if "发送格式" not in self._params:
+            self.set_param("发送格式", "JSON",
+                          param_type="enum",
+                          options=["JSON", "ASCII", "HEX", "二进制"],
+                          description="发送数据格式")
+        
+        # 数据内容 - 只在不存在时设置默认值
+        if "数据内容" not in self._params:
+            self.set_param("数据内容", "",
+                          param_type="data_content",
+                          description="点击选择要发送的数据（格式：模块名称.结果字段）")
 
-        # 发送控制
-        self.set_param("发送条件", "总是",
-                      param_type="enum",
-                      options=["总是", "成功时", "失败时"],
-                      description="发送触发条件")
-        self.set_param("仅发送变化的数据", False, description="是否只发送变化的数据")
+        # 发送控制 - 只在不存在时设置默认值
+        if "发送条件" not in self._params:
+            self.set_param("发送条件", "总是",
+                          param_type="enum",
+                          options=["总是", "成功时", "失败时"],
+                          description="发送触发条件")
+        if "仅发送变化的数据" not in self._params:
+            self.set_param("仅发送变化的数据", False, description="是否只发送变化的数据")
+    
+    def _update_data_content_options(self):
+        """根据上游数据更新数据内容选项"""
+        upstream_values = self.get_upstream_values()
+        
+        if upstream_values:
+            # 有上游数据，生成字段选择列表
+            field_options = []
+            for key in upstream_values.keys():
+                # 将字段名转换为中文显示
+                display_name = self._translate_field_name(key)
+                field_options.append(f"{display_name} ({key})")
+            
+            # 添加特殊选项
+            field_options.insert(0, "全部数据 (all)")
+            field_options.append("自定义输入")
+            
+            self.set_param("数据内容", "",
+                          param_type="enum",
+                          options=field_options,
+                          description="选择要发送的数据字段")
+        else:
+            # 没有上游数据，使用文本输入
+            self.set_param("数据内容", "",
+                          param_type="text",
+                          description="输入要发送的数据内容（无上游数据可用）")
+    
+    def _translate_field_name(self, field_name: str) -> str:
+        """将字段名翻译为中文"""
+        translations = {
+            # 通用字段
+            "status": "状态",
+            "result": "结果",
+            "message": "消息",
+            "error": "错误",
+            "confidence": "置信度",
+            "score": "分数",
+            "value": "数值",
+            "count": "数量",
+            "index": "索引",
+            "id": "编号",
+            "name": "名称",
+            "type": "类型",
+            "category": "类别",
+            "label": "标签",
+            "timestamp": "时间戳",
+            
+            # 图像相关
+            "width": "width",
+            "height": "height",
+            "channels": "通道数",
+            "format": "格式",
+            "size": "大小",
+            "resolution": "分辨率",
+            
+            # 位置相关
+            "x": "X坐标",
+            "y": "Y坐标",
+            "z": "Z坐标",
+            "position": "位置",
+            "center": "中心点",
+            "top": "顶部",
+            "bottom": "底部",
+            "left": "左侧",
+            "right": "右侧",
+            
+            # 尺寸相关
+            "radius": "半径",
+            "diameter": "直径",
+            "area": "面积",
+            "perimeter": "周长",
+            "length": "长度",
+            "distance": "距离",
+            "angle": "角度",
+            "rotation": "旋转角度",
+            "scale": "缩放比例",
+            
+            # 检测相关
+            "detected": "检测结果",
+            "found": "发现目标",
+            "matched": "匹配结果",
+            "recognized": "识别结果",
+            "verified": "验证结果",
+            "passed": "通过状态",
+            "failed": "失败状态",
+            
+            # 码识别相关
+            "code": "码值",
+            "barcode": "条形码",
+            "qrcode": "二维码",
+            "content": "内容",
+            "data": "数据",
+            "text": "文本",
+            
+            # 匹配相关
+            "template": "模板",
+            "similarity": "相似度",
+            "correlation": "相关性",
+            "offset": "偏移量",
+            "shift": "位移",
+            
+            # 测量相关
+            "measurement": "测量值",
+            "dimension": "尺寸",
+            "thickness": "厚度",
+            "width_mm": "宽度(mm)",
+            "height_mm": "高度(mm)",
+            "depth": "深度",
+            "volume": "体积",
+            
+            # 颜色相关
+            "color": "颜色",
+            "gray": "灰度",
+            "brightness": "亮度",
+            "contrast": "对比度",
+            "saturation": "饱和度",
+            "hue": "色调",
+            
+            # 通信相关
+            "device_id": "设备ID",
+            "connection": "连接",
+            "sent": "已发送",
+            "received": "已接收",
+            "send_count": "发送次数",
+            "receive_count": "接收次数",
+        }
+        
+        return translations.get(field_name, field_name)
 
     def _get_available_connections(self) -> List[str]:
-        """获取可用的连接列表（返回display_name列表）"""
+        """获取可用的连接列表（带缓存机制，避免卡顿）
+        
+        修复：
+        1. 添加缓存避免重复查询
+        2. 使用非阻塞方式获取连接
+        3. 异常时返回缓存数据或空列表
+        """
+        import time
+        
+        # 检查缓存
+        cache_attr = '_connections_cache'
+        cache_timeout = 5.0  # 5秒缓存
+        
+        if hasattr(self, cache_attr):
+            cache_time, cache_data = getattr(self, cache_attr)
+            if time.time() - cache_time < cache_timeout:
+                return cache_data
+        
         try:
             conn_manager = _get_comm_manager()
+            result = []
+            
+            # 快速检查连接管理器是否可用（非阻塞）
+            if conn_manager is None:
+                return []
+            
+            # 方法1：使用get_available_connections（推荐）
             if hasattr(conn_manager, 'get_available_connections'):
                 connections = conn_manager.get_available_connections()
-                return [conn["display_name"] for conn in connections if conn.get("connected")]
-            elif hasattr(conn_manager, 'get_all_connections'):
-                # 如果只有get_all_connections，遍历获取已连接的
-                connections = conn_manager.get_all_connections()
-                result = []
+                self._logger.debug(f"获取到 {len(connections)} 个可用连接")
                 for conn in connections:
-                    if hasattr(conn, 'is_connected') and conn.is_connected:
-                        name = getattr(conn, 'name', getattr(conn, 'id', str(conn)))
-                        protocol = getattr(conn, 'protocol_type', 'TCP')
-                        result.append(f"[{conn.id}] {protocol} - {name}")
-                return result
-            return []
+                    display_name = conn.get("display_name", "")
+                    device_id = conn.get("device_id", "")
+                    name = conn.get("name", "")
+                    protocol = conn.get("protocol_type", "Unknown")
+                    
+                    self._logger.debug(f"连接信息: device_id={device_id}, name={name}, display_name={display_name}")
+                    
+                    # 确保 display_name 不为空
+                    if not display_name:
+                        display_name = f"[{protocol}] {name}"
+                    
+                    # 确保 device_id 不为空
+                    if not device_id:
+                        device_id = name
+                    
+                    result.append(f"{device_id}: {display_name}")
+            
+            # 方法2：使用get_all_connections（备选）
+            elif hasattr(conn_manager, 'get_all_connections'):
+                connections = conn_manager.get_all_connections()
+                for conn in connections:
+                    conn_id = getattr(conn, 'id', '')
+                    name = getattr(conn, 'name', '')
+                    protocol = getattr(conn, 'protocol_type', 'TCP')
+                    is_connected = getattr(conn, 'is_connected', False)
+                    status = "已连接" if is_connected else "未连接"
+                    result.append(f"{conn_id}: [{protocol}] {name} ({status})")
+            
+            # 更新缓存
+            setattr(self, cache_attr, (time.time(), result))
+            return result
+            
         except Exception as e:
-            print(f"获取可用连接列表失败: {e}")
+            # 出错时返回缓存数据（如果可用）
+            if hasattr(self, cache_attr):
+                return getattr(self, cache_attr)[1]
             return []
 
     def _get_connection_by_display_name(self, display_name: str) -> Optional[Any]:
-        """根据显示名称获取连接"""
+        """根据显示名称获取连接
+        
+        支持两种格式：
+        1. 完整的显示格式：device_id: display_name
+        2. 只有display_name
+        """
         try:
             conn_manager = _get_comm_manager()
             connections = conn_manager.get_available_connections()
+            
+            self._logger.debug(f"尝试根据显示名称查找连接: {display_name}")
+            self._logger.debug(f"可用连接数: {len(connections)}")
+            
+            # 尝试直接匹配 display_name
             for conn in connections:
-                if conn.get("display_name") == display_name:
-                    return conn_manager.get_connection(conn["name"])
+                conn_display_name = conn.get("display_name", "")
+                self._logger.debug(f"检查连接: display_name={conn_display_name}")
+                if conn_display_name == display_name:
+                    device_id = conn.get("device_id", conn.get("name", ""))
+                    self._logger.debug(f"找到匹配，使用 device_id: {device_id}")
+                    return conn_manager.get_connection(device_id)
+            
+            # 尝试解析 device_id: display_name 格式
+            if ": " in display_name:
+                parts = display_name.split(": ", 1)
+                if len(parts) == 2:
+                    device_id = parts[0]
+                    self._logger.debug(f"尝试使用解析的 device_id 查找: {device_id}")
+                    # 使用device_id查找
+                    for conn in connections:
+                        if conn.get("device_id") == device_id:
+                            self._logger.debug(f"找到匹配的 device_id: {device_id}")
+                            return conn_manager.get_connection(device_id)
+            
+            self._logger.warning(f"未找到匹配的连接: {display_name}")
             return None
-        except Exception:
+        except Exception as e:
+            self._logger.error(f"根据显示名称获取连接失败: {e}")
+            import traceback
+            self._logger.error(traceback.format_exc())
             return None
 
     def _run_impl(self):
-        """执行发送逻辑"""
+        """执行发送逻辑（重构版）"""
         try:
-            # 1. 检查连接ID
-            connection_id = self.get_param("连接ID", "")
+            self._logger.info(f"[{self.name}] 开始执行发送数据...")
+            
+            # 调试：查看所有参数及其值
+            all_params = self.get_all_params()
+            self._logger.debug(f"工具所有参数键: {list(all_params.keys())}")
+            self._logger.info(f"【调试】所有参数及其值:")
+            for key, value in all_params.items():
+                if not key.startswith('__'):
+                    self._logger.info(f"  {key}: '{value}' (类型: {type(value).__name__})")
+            
+            # 特别查看目标连接参数
+            target_conn_value = all_params.get("目标连接", "")
+            self._logger.info(f"【调试】目标连接原始值: '{target_conn_value}'")
+            self._logger.info(f"【调试】目标连接类型: {type(target_conn_value)}")
+            self._logger.info(f"【调试】目标连接是否为空: {not target_conn_value}")
+            if target_conn_value:
+                self._logger.info(f"【调试】目标连接长度: {len(str(target_conn_value))}")
+                self._logger.info(f"【调试】目标连接repr: {repr(target_conn_value)}")
+            
+            # 1. 检查目标连接 - 尝试多个可能的参数名
+            connection_id = ""
+            
+            # 尝试不同的参数名（处理可能的参数名不一致问题）
+            possible_names = ["目标连接", "连接ID", "connection_id", "target_connection"]
+            for name in possible_names:
+                value = all_params.get(name, "")
+                self._logger.info(f"【调试】尝试参数名 '{name}': '{value}'")
+                if value:
+                    connection_id = value
+                    self._logger.info(f"【调试】使用参数名 '{name}' 获取连接: '{connection_id}'")
+                    break
+            
+            # 如果没有找到，使用默认的 get_param
             if not connection_id:
+                connection_id = self.get_param("目标连接", "")
+                self._logger.info(f"【调试】使用get_param获取: '{connection_id}'")
+            
+            self._logger.info(f"【调试】最终目标连接: '{connection_id}'")
+            self._logger.info(f"【调试】最终目标连接类型: {type(connection_id)}")
+            self._logger.info(f"【调试】最终目标连接长度: {len(str(connection_id)) if connection_id else 0}")
+            
+            if not connection_id:
+                self._logger.error("未选择连接")
+                self._logger.error(f"可用参数: {list(all_params.keys())}")
                 return {
                     "status": False,
-                    "message": "未选择连接",
+                    "message": "未选择连接，请在属性面板中选择通讯连接",
                     "发送成功次数": self._send_count,
                     "发送失败次数": self._fail_count
                 }
 
             # 2. 获取连接
-            # 尝试直接使用connection_id查找
             conn_manager = _get_comm_manager()
+            
+            # 首先尝试直接使用connection_id查找
             connection = conn_manager.get_connection(connection_id)
+            self._logger.debug(f"直接查找连接结果: {connection is not None}")
+            
+            # 如果找不到，尝试解析 device_id: display_name 格式，提取device_id
+            if not connection and ": " in connection_id:
+                parts = connection_id.split(": ", 1)
+                if len(parts) == 2:
+                    device_id = parts[0]
+                    self._logger.debug(f"尝试使用device_id查找: {device_id}")
+                    connection = conn_manager.get_connection(device_id)
+                    self._logger.debug(f"使用device_id查找结果: {connection is not None}")
 
-            # 如果找不到，尝试使用display_name查找
+            # 如果还找不到，尝试使用display_name查找
             if not connection:
                 connection = self._get_connection_by_display_name(connection_id)
+                self._logger.debug(f"通过display_name查找连接结果: {connection is not None}")
 
             if not connection:
+                self._logger.error(f"未找到连接: {connection_id}")
                 return {
                     "status": False,
                     "message": f"未找到连接: {connection_id}",
@@ -164,11 +491,34 @@ class SendDataTool(ToolBase):
                 }
             
             # 3. 检查连接状态
-            protocol_instance = connection.protocol_instance
-            if not protocol_instance or not protocol_instance.is_connected():
+            self._logger.debug(f"连接状态检查 - is_connected: {connection.is_connected}")
+            if not connection.is_connected:
+                self._logger.error(f"连接 {connection.name} 未建立")
                 return {
                     "status": False,
-                    "message": "连接未建立",
+                    "message": f"连接 {connection.name} 未建立",
+                    "发送成功次数": self._send_count,
+                    "发送失败次数": self._fail_count
+                }
+            
+            # 4. 获取协议实例
+            protocol_instance = connection.protocol_instance
+            self._logger.debug(f"协议实例: {protocol_instance is not None}")
+            if not protocol_instance:
+                self._logger.error("协议实例不存在")
+                return {
+                    "status": False,
+                    "message": "协议实例不存在",
+                    "发送成功次数": self._send_count,
+                    "发送失败次数": self._fail_count
+                }
+            
+            # 5. 检查协议实例连接状态
+            if hasattr(protocol_instance, 'is_connected') and not protocol_instance.is_connected():
+                self._logger.error("协议实例未连接")
+                return {
+                    "status": False,
+                    "message": "协议实例未连接",
                     "发送成功次数": self._send_count,
                     "发送失败次数": self._fail_count
                 }
@@ -178,9 +528,11 @@ class SendDataTool(ToolBase):
             if not input_data:
                 input_data = {}
 
-            # 5. 检查发送条件
+            # 6. 检查发送条件
             send_condition = self.get_param("发送条件", "总是")
+            self._logger.debug(f"发送条件: {send_condition}")
             if not self._should_send(send_condition, input_data):
+                self._logger.info("不满足发送条件，跳过发送")
                 return {
                     "status": True,
                     "message": "不满足发送条件",
@@ -188,12 +540,14 @@ class SendDataTool(ToolBase):
                     "发送失败次数": self._fail_count
                 }
 
-            # 6. 直接使用收集的数据
+            # 7. 直接使用收集的数据
             data_to_send = input_data
+            self._logger.debug(f"准备发送的数据: {data_to_send}")
 
-            # 7. 检查数据变化
+            # 8. 检查数据变化
             only_on_change = self.get_param("仅发送变化的数据", False)
             if only_on_change and self._is_data_unchanged(data_to_send):
+                self._logger.info("数据未变化，跳过发送")
                 return {
                     "status": True,
                     "message": "数据未变化，跳过发送",
@@ -201,12 +555,16 @@ class SendDataTool(ToolBase):
                     "发送失败次数": self._fail_count
                 }
 
-            # 8. 格式化数据
-            format_type = self.get_param("数据格式", "json")
+            # 9. 格式化数据
+            format_type = self.get_param("发送格式", "JSON")
+            self._logger.debug(f"格式化数据，格式: {format_type}, 数据: {data_to_send}")
             formatted_data = self._format_data(data_to_send, format_type)
+            self._logger.debug(f"格式化后的数据: {formatted_data}")
 
-            # 9. 发送数据
+            # 10. 发送数据
+            self._logger.info(f"正在发送数据到 {connection_id}...")
             success = protocol_instance.send(formatted_data)
+            self._logger.info(f"发送结果: {success}")
 
             if success:
                 self._send_count += 1
@@ -227,6 +585,7 @@ class SendDataTool(ToolBase):
 
         except Exception as e:
             self._fail_count += 1
+            self._logger.error(f"发送异常: {e}", exc_info=True)
             return {
                 "status": False,
                 "message": f"发送异常: {str(e)}",
@@ -235,21 +594,130 @@ class SendDataTool(ToolBase):
             }
 
     def _collect_input_data(self) -> Dict[str, Any]:
-        """收集上游工具的输入数据"""
+        """收集上游工具的输入数据（重构版）
+        
+        使用新的上游结果数据传递机制：
+        - 从ToolBase.get_upstream_values()获取上游数据
+        - 支持{all}、{field_name}、模块名称.结果字段等格式
+        """
         input_data = {}
-
-        # 从_result_data获取数据（上游工具的输出）
-        if self._result_data:
-            try:
-                all_values = self._result_data.get_all_values()
-                if all_values:
-                    # 应用数据模板
-                    template = self.get_param("数据模板", "*")
-                    input_data = self._apply_data_template(all_values, template)
-            except Exception:
-                pass
-
+        
+        try:
+            # 获取数据内容配置
+            data_content = self.get_param("数据内容", "")
+            self._logger.debug(f"数据内容参数: {data_content}")
+            
+            # 使用新的上游数据获取机制
+            upstream_values = self.get_upstream_values()
+            self._logger.debug(f"上游数据: {upstream_values}")
+            
+            if data_content:
+                # 处理 "模块名称.结果字段" 格式（用户从选择器选择的格式）
+                if "." in data_content and not data_content.startswith("{"):
+                    parts = data_content.split(".", 1)
+                    if len(parts) == 2:
+                        module_name, field_name = parts
+                        self._logger.debug(f"解析模块名称: {module_name}, 字段: {field_name}")
+                        
+                        # 从上游数据中查找对应模块的数据
+                        if upstream_values:
+                            # 提取特定字段的值
+                            if field_name in upstream_values:
+                                field_value = upstream_values[field_name]
+                                input_data = {field_name: field_value}
+                                self._logger.info(f"提取字段 '{field_name}' 的值: {field_value}")
+                            else:
+                                # 字段不存在，发送所有数据并提示
+                                self._logger.warning(f"字段 '{field_name}' 不在上游数据中，发送所有数据")
+                                input_data = {"data": upstream_values}
+                        else:
+                            # 没有上游数据，使用字段名作为key
+                            input_data = {field_name: data_content}
+                # 如果数据内容为{all}，发送所有上游数据
+                elif data_content.strip() == "{all}":
+                    if upstream_values:
+                        input_data = upstream_values
+                    else:
+                        input_data = {"data": "all"}
+                # 如果包含变量引用 {field_name}
+                elif "{" in data_content and "}" in data_content:
+                    if upstream_values:
+                        input_data = self._parse_data_content_with_variables(data_content, upstream_values)
+                    else:
+                        input_data = {"data": data_content}
+                else:
+                    # 固定内容，作为data字段发送
+                    input_data = {"data": data_content}
+                
+                self._logger.debug(f"收集到输入数据: {input_data}")
+            elif upstream_values:
+                # 没有配置数据内容，但有上游数据，发送所有上游数据
+                input_data = upstream_values
+                self._logger.debug(f"使用默认上游数据: {list(upstream_values.keys())}")
+            else:
+                self._logger.warning("没有上游数据，且数据内容未配置")
+                    
+        except Exception as e:
+            self._logger.error(f"收集输入数据失败: {e}", exc_info=True)
+            
         return input_data
+    
+    def _parse_data_content_with_variables(self, content: str, all_values: Dict[str, Any]) -> Dict[str, Any]:
+        """解析包含变量的数据内容
+        
+        支持格式：
+        - {all} - 发送所有上游数据
+        - {field_name} - 引用上游数据的字段
+        - 普通文本 - 直接包含在结果中
+        
+        示例：
+        - "{all}" - 返回所有上游数据
+        - "{status}" - 返回 {"data": "value of status"}
+        - "result: {status}, value: {data}" - 返回 {"status": "...", "data": "..."}
+        """
+        import re
+        
+        # 处理空内容
+        if not content or not content.strip():
+            return {"data": ""}
+        
+        content_stripped = content.strip()
+        
+        # 处理 {all} - 返回所有上游数据
+        if content_stripped == "{all}":
+            return all_values.copy()
+        
+        # 简单模式：如果内容是单个变量（非{all}），直接返回该字段值
+        if content_stripped.startswith("{") and content_stripped.endswith("}"):
+            var_name = content_stripped[1:-1].strip()
+            if var_name in all_values:
+                # 如果是单个字段，直接返回该字段的值
+                value = all_values[var_name]
+                if isinstance(value, dict):
+                    return value
+                else:
+                    return {"data": value}
+        
+        # 复杂模式：解析多个变量
+        result = {}
+        pattern = r'\{([^}]+)\}'
+        matches = re.findall(pattern, content)
+        
+        if matches:
+            # 提取所有引用的字段
+            for var_name in matches:
+                var_name = var_name.strip()
+                if var_name in all_values:
+                    result[var_name] = all_values[var_name]
+            
+            # 如果没有匹配到任何变量，将整个内容作为data字段
+            if not result:
+                result = {"data": content}
+        else:
+            # 没有变量，作为固定内容
+            result = {"data": content}
+            
+        return result
 
     def _apply_data_template(self, data: Dict[str, Any], template: str) -> Dict[str, Any]:
         """应用数据模板"""
@@ -402,104 +870,244 @@ class ReceiveDataTool(ToolBase):
         self._last_receive_time = 0.0
 
     def _init_params(self):
-        """初始化参数"""
+        """初始化参数
+        
+        只在参数不存在时才设置默认值，避免覆盖用户设置
+        """
         # 连接选择（动态加载可用连接）
         available_connections = self._get_available_connections()
-        self.set_param("连接ID", "",
-                      param_type="enum",
-                      options=available_connections if available_connections else ["无可用连接"],
-                      description="选择已有的通讯连接ID")
+        # 只在参数不存在或为空时设置默认值
+        current_connection = self._params.get("连接ID", "")
+        if not current_connection:
+            self.set_param("连接ID", "",
+                          param_type="enum",
+                          options=available_connections if available_connections else ["无可用连接"],
+                          description="选择已有的通讯连接ID")
+        else:
+            # 只更新选项列表，不覆盖值
+            self._params[f"__options_连接ID"] = available_connections if available_connections else ["无可用连接"]
 
-        # 接收配置
-        self.set_param("输出格式", "JSON",
-                      param_type="enum",
-                      options=["JSON", "字符串", "整数", "浮点数", "HEX", "字节"],
-                      description="接收数据的解析格式")
-        self.set_param("超时时间", 5.0,
-                      description="接收超时时间（秒）")
-        self.set_param("缓冲区大小", 4096,
-                      description="接收缓冲区大小（字节）")
+        # 接收配置 - 只在不存在时设置默认值
+        if "输出格式" not in self._params:
+            self.set_param("输出格式", "JSON",
+                          param_type="enum",
+                          options=["JSON", "字符串", "整数", "浮点数", "HEX", "字节"],
+                          description="接收数据的解析格式")
+        if "超时时间" not in self._params:
+            self.set_param("超时时间", 5.0,
+                          description="接收超时时间（秒）")
+        if "缓冲区大小" not in self._params:
+            self.set_param("缓冲区大小", 4096,
+                          description="接收缓冲区大小（字节）")
 
-        # 数据提取
-        self.set_param("数据提取规则", "",
-                      description='从接收数据中提取字段，如{"status": "result.status"}')
+        # 数据提取规则 - 只在不存在时设置默认值
+        if "数据提取规则" not in self._params:
+            self.set_param("数据提取规则", None,
+                          param_type="extraction_rule",
+                          description='配置Modbus TCP数据提取规则')
+
+    def _check_input(self) -> bool:
+        """检查输入数据有效性
+        
+        接收数据工具不需要输入图像数据，
+        它从外部连接接收数据，所以总是返回True
+        """
+        return True
 
     def _get_available_connections(self) -> List[str]:
-        """获取可用的连接列表（返回display_name列表）"""
+        """获取可用的连接列表（统一格式：device_id: display_name）"""
         try:
             conn_manager = _get_comm_manager()
             connections = conn_manager.get_available_connections()
-            return [conn["display_name"] for conn in connections if conn.get("connected")]
+            result = []
+            for conn in connections:
+                if conn.get("connected"):
+                    device_id = conn.get("device_id", conn.get("name", ""))
+                    display_name = conn.get("display_name", "")
+                    if device_id and display_name:
+                        result.append(f"{device_id}: {display_name}")
+                    elif display_name:
+                        result.append(display_name)
+            self._logger.debug(f"接收数据工具获取到 {len(result)} 个可用连接")
+            return result
         except Exception as e:
-            print(f"获取可用连接列表失败: {e}")
+            self._logger.error(f"获取可用连接列表失败: {e}")
             return []
 
     def _get_connection_by_display_name(self, display_name: str) -> Optional[Any]:
-        """根据显示名称获取连接"""
+        """根据显示名称获取连接
+        
+        支持多种格式：
+        1. 完整的显示格式：device_id: display_name
+        2. 只有display_name
+        3. 方括号格式：[device_id] display_name
+        """
         try:
             conn_manager = _get_comm_manager()
             connections = conn_manager.get_available_connections()
+            
+            self._logger.debug(f"尝试根据显示名称查找连接: {display_name}")
+            
+            # 尝试直接匹配 display_name
             for conn in connections:
-                if conn.get("display_name") == display_name:
-                    return conn_manager.get_connection(conn["name"])
+                conn_display_name = conn.get("display_name", "")
+                if conn_display_name == display_name:
+                    device_id = conn.get("device_id", conn.get("name", ""))
+                    self._logger.debug(f"找到匹配，使用 device_id: {device_id}")
+                    return conn_manager.get_connection(device_id)
+            
+            # 尝试解析 device_id: display_name 格式
+            if ": " in display_name:
+                parts = display_name.split(": ", 1)
+                if len(parts) == 2:
+                    device_id = parts[0]
+                    self._logger.debug(f"尝试使用解析的 device_id 查找: {device_id}")
+                    for conn in connections:
+                        if conn.get("device_id") == device_id:
+                            self._logger.debug(f"找到匹配的 device_id: {device_id}")
+                            return conn_manager.get_connection(device_id)
+            
+            # 尝试解析 [device_id] display_name 格式
+            if display_name.startswith("[") and "]" in display_name:
+                parts = display_name.split("]", 1)
+                if len(parts) == 2:
+                    device_id = parts[0][1:]  # 去掉开头的 [
+                    self._logger.debug(f"尝试使用方括号格式的 device_id 查找: {device_id}")
+                    for conn in connections:
+                        if conn.get("device_id") == device_id:
+                            self._logger.debug(f"找到匹配的 device_id: {device_id}")
+                            return conn_manager.get_connection(device_id)
+            
+            self._logger.warning(f"未找到匹配的连接: {display_name}")
             return None
-        except Exception:
+        except Exception as e:
+            self._logger.error(f"根据显示名称获取连接失败: {e}")
+            import traceback
+            self._logger.error(traceback.format_exc())
             return None
 
     def _run_impl(self):
         """执行接收逻辑（重构版）"""
-        # 1. 检查连接ID
-        connection_id = self.get_param("连接ID", "")
-        if not connection_id:
-            return {
-                "status": False,
-                "message": "未选择通讯连接，请在参数中选择已建立的连接",
-                "接收成功次数": self._receive_count,
-                "接收失败次数": self._fail_count
-            }
-
-        # 2. 获取已有连接
-        conn_manager = _get_comm_manager()
-        connection = conn_manager.get_connection(connection_id)
-
-        # 如果找不到，尝试使用display_name查找
-        if not connection:
-            connection = self._get_connection_by_display_name(connection_id)
-
-        if not connection:
-            return {
-                "status": False,
-                "message": f"未找到连接 {connection_id}，请先在通讯配置中建立连接",
-                "接收成功次数": self._receive_count,
-                "接收失败次数": self._fail_count
-            }
-
-        # 3. 检查连接状态
-        protocol_instance = connection.protocol_instance
-        if not protocol_instance or not protocol_instance.is_connected():
-            return {
-                "status": False,
-                "message": f"连接 {connection.name} 未建立，请先连接",
-                "接收成功次数": self._receive_count,
-                "接收失败次数": self._fail_count
-            }
-
-        # 4. 检查接收接口
-        if not hasattr(protocol_instance, 'receive'):
-            return {
-                "status": False,
-                "message": f"连接 {connection.name} 无接收接口",
-                "接收成功次数": self._receive_count,
-                "接收失败次数": self._fail_count
-            }
-
-        # 5. 从已有连接接收数据
         try:
+            self._logger.info(f"[{self.name}] 开始执行接收数据...")
+            
+            # 调试：查看所有参数
+            all_params = self.get_all_params()
+            self._logger.debug(f"工具所有参数: {list(all_params.keys())}")
+            
+            # 1. 检查连接ID - 尝试多个可能的参数名
+            connection_id = ""
+            
+            # 尝试不同的参数名（处理可能的参数名不一致问题）
+            possible_names = ["连接ID", "目标连接", "connection_id", "target_connection"]
+            for name in possible_names:
+                value = all_params.get(name, "")
+                if value:
+                    connection_id = value
+                    self._logger.debug(f"使用参数名 '{name}' 获取连接: {connection_id}")
+                    break
+            
+            # 如果没有找到，使用默认的 get_param
+            if not connection_id:
+                connection_id = self.get_param("连接ID", "")
+            
+            self._logger.debug(f"最终连接ID: '{connection_id}'")
+            self._logger.debug(f"连接ID类型: {type(connection_id)}")
+            self._logger.debug(f"连接ID长度: {len(connection_id) if connection_id else 0}")
+            
+            if not connection_id:
+                self._logger.error("未选择通讯连接")
+                self._logger.error(f"可用参数: {list(all_params.keys())}")
+                return {
+                    "status": False,
+                    "message": "未选择通讯连接，请在属性面板中选择已建立的连接",
+                    "接收成功次数": self._receive_count,
+                    "接收失败次数": self._fail_count
+                }
+
+            # 2. 获取已有连接
+            conn_manager = _get_comm_manager()
+            
+            # 首先尝试直接使用connection_id查找
+            connection = conn_manager.get_connection(connection_id)
+            self._logger.debug(f"直接查找连接结果: {connection is not None}")
+            
+            # 如果找不到，尝试解析 device_id: display_name 格式，提取device_id
+            if not connection and ": " in connection_id:
+                parts = connection_id.split(": ", 1)
+                if len(parts) == 2:
+                    device_id = parts[0]
+                    self._logger.debug(f"尝试使用device_id查找: {device_id}")
+                    connection = conn_manager.get_connection(device_id)
+                    self._logger.debug(f"使用device_id查找结果: {connection is not None}")
+
+            # 如果还找不到，尝试使用display_name查找
+            if not connection:
+                connection = self._get_connection_by_display_name(connection_id)
+                self._logger.debug(f"通过display_name查找连接结果: {connection is not None}")
+
+            if not connection:
+                self._logger.error(f"未找到连接: {connection_id}")
+                return {
+                    "status": False,
+                    "message": f"未找到连接 {connection_id}，请先在通讯配置中建立连接",
+                    "接收成功次数": self._receive_count,
+                    "接收失败次数": self._fail_count
+                }
+
+            # 3. 检查连接状态
+            self._logger.debug(f"连接状态检查 - is_connected: {connection.is_connected}")
+            if not connection.is_connected:
+                self._logger.error(f"连接 {connection.name} 未建立")
+                return {
+                    "status": False,
+                    "message": f"连接 {connection.name} 未建立，请先连接",
+                    "接收成功次数": self._receive_count,
+                    "接收失败次数": self._fail_count
+                }
+            
+            # 4. 获取协议实例
+            protocol_instance = connection.protocol_instance
+            self._logger.debug(f"协议实例: {protocol_instance is not None}")
+            if not protocol_instance:
+                self._logger.error("协议实例不存在")
+                return {
+                    "status": False,
+                    "message": "协议实例不存在",
+                    "接收成功次数": self._receive_count,
+                    "接收失败次数": self._fail_count
+                }
+            
+            # 5. 检查协议实例连接状态
+            if hasattr(protocol_instance, 'is_connected') and not protocol_instance.is_connected():
+                self._logger.error("协议实例未连接")
+                return {
+                    "status": False,
+                    "message": "协议实例未连接",
+                    "接收成功次数": self._receive_count,
+                    "接收失败次数": self._fail_count
+                }
+
+            # 6. 检查接收接口
+            if not hasattr(protocol_instance, 'receive'):
+                self._logger.error(f"连接 {connection.name} 无接收接口")
+                return {
+                    "status": False,
+                    "message": f"连接 {connection.name} 无接收接口",
+                    "接收成功次数": self._receive_count,
+                    "接收失败次数": self._fail_count
+                }
+
+            # 7. 从已有连接接收数据
+            self._logger.info(f"正在从 {connection.name} 接收数据...")
             timeout = self.get_param("超时时间", 5.0)
+            self._logger.debug(f"接收超时: {timeout}秒")
             raw_data = protocol_instance.receive(timeout)
+            self._logger.debug(f"接收到的原始数据: {raw_data}")
 
             if raw_data is None:
                 self._fail_count += 1
+                self._logger.warning("接收超时，未收到数据")
                 return {
                     "status": False,
                     "message": "接收超时，未收到数据",
@@ -507,19 +1115,22 @@ class ReceiveDataTool(ToolBase):
                     "接收失败次数": self._fail_count
                 }
 
-            # 6. 解析数据
-            format_type = self.get_param("输出格式", "json")
+            # 8. 解析数据
+            format_type = self.get_param("输出格式", "JSON")
+            self._logger.debug(f"解析数据，格式: {format_type}")
             parsed_data = self._parse_data(raw_data, format_type)
+            self._logger.debug(f"解析后的数据: {parsed_data}")
 
-            # 7. 应用数据提取规则
+            # 9. 应用数据提取规则
             extracted_data = self._extract_data(parsed_data)
+            self._logger.debug(f"提取后的数据: {extracted_data}")
 
-            # 8. 更新统计
+            # 10. 更新统计
             self._receive_count += 1
             self._last_received_data = extracted_data
             self._last_receive_time = time.time()
 
-            # 9. 构建输出
+            # 11. 构建输出
             result = {
                 "status": True,
                 "message": f"从 {connection.name} 接收到数据",
@@ -530,10 +1141,12 @@ class ReceiveDataTool(ToolBase):
                 "OutputData": extracted_data
             }
 
+            self._logger.info(f"接收数据成功: {extracted_data}")
             return result
 
         except Exception as e:
             self._fail_count += 1
+            self._logger.error(f"接收异常: {e}", exc_info=True)
             return {
                 "status": False,
                 "message": f"接收异常：{str(e)}",
@@ -587,27 +1200,38 @@ class ReceiveDataTool(ToolBase):
 
     def _extract_data(self, data: Any) -> Any:
         """根据规则提取数据"""
-        extract_rules = self.get_param("数据提取规则", "")
+        extract_rules = self.get_param("数据提取规则", None)
 
         if not extract_rules:
             return data
 
         try:
-            import json
-            rules = json.loads(extract_rules)
+            # 检查是否是新的 DataExtractionRule 格式
+            if isinstance(extract_rules, dict) and "rule_type" in extract_rules:
+                from tools.communication.data_extraction_rules import DataExtractionRule
+                rule = DataExtractionRule.from_dict(extract_rules)
+                return rule.extract(data)
+            
+            # 兼容旧格式（JSON字符串）
+            if isinstance(extract_rules, str):
+                import json
+                rules = json.loads(extract_rules)
 
-            if not isinstance(data, dict):
-                return data
+                if not isinstance(data, dict):
+                    return data
 
-            result = {}
-            for target_field, source_path in rules.items():
-                value = self._get_nested_value(data, source_path)
-                if value is not None:
-                    result[target_field] = value
+                result = {}
+                for target_field, source_path in rules.items():
+                    value = self._get_nested_value(data, source_path)
+                    if value is not None:
+                        result[target_field] = value
 
-            return result if result else data
+                return result if result else data
 
-        except Exception:
+            return data
+
+        except Exception as e:
+            self._logger.warning(f"数据提取失败: {e}")
             return data
 
     def _get_nested_value(self, data: Any, path: str) -> Any:

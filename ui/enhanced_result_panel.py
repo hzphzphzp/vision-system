@@ -401,18 +401,21 @@ class ResultDetailWidget(QWidget):
             self._add_info_label("未检测到目标")
 
     def _show_general_result(self, result_data: ResultData):
-        """显示通用结果"""
+        """显示通用结果（字段名中文化）"""
         values = result_data.get_values_with_types()
 
         for key, value, data_type in values:
             if key in ["message", "status", "count"]:
                 continue
 
+            # 翻译字段名为中文（保留width和height为英文）
+            display_key = self._translate_field_name(key)
+
             type_name = {
-                DataType.INT: "int",
-                DataType.FLOAT: "float",
-                DataType.STRING: "string",
-                DataType.BOOL: "bool",
+                DataType.INT: "整数",
+                DataType.FLOAT: "浮点数",
+                DataType.STRING: "字符串",
+                DataType.BOOL: "布尔值",
                 DataType.POINT: "点",
                 DataType.RECT: "矩形",
                 DataType.LINE: "线",
@@ -431,8 +434,110 @@ class ResultDetailWidget(QWidget):
                 display_value = str(value)
 
             self._add_result_group(
-                key, [("类型", type_name), ("值", str(display_value))]
+                display_key, [("类型", type_name), ("值", str(display_value))]
             )
+
+    def _translate_field_name(self, field_name: str) -> str:
+        """将字段名翻译为中文（保留width和height为英文）"""
+        translations = {
+            # 通用字段
+            "status": "状态",
+            "result": "结果",
+            "message": "消息",
+            "error": "错误",
+            "confidence": "置信度",
+            "score": "分数",
+            "value": "数值",
+            "count": "数量",
+            "index": "索引",
+            "id": "编号",
+            "name": "名称",
+            "type": "类型",
+            "category": "类别",
+            "label": "标签",
+            "timestamp": "时间戳",
+            
+            # 图像相关（保留width和height为英文）
+            "width": "width",
+            "height": "height",
+            "channels": "通道数",
+            "format": "格式",
+            "size": "大小",
+            "resolution": "分辨率",
+            
+            # 位置相关
+            "x": "X坐标",
+            "y": "Y坐标",
+            "z": "Z坐标",
+            "position": "位置",
+            "center": "中心点",
+            "top": "顶部",
+            "bottom": "底部",
+            "left": "左侧",
+            "right": "右侧",
+            
+            # 尺寸相关
+            "radius": "半径",
+            "diameter": "直径",
+            "area": "面积",
+            "perimeter": "周长",
+            "length": "长度",
+            "distance": "距离",
+            "angle": "角度",
+            "rotation": "旋转角度",
+            "scale": "缩放比例",
+            
+            # 检测相关
+            "detected": "检测结果",
+            "found": "发现目标",
+            "matched": "匹配结果",
+            "recognized": "识别结果",
+            "verified": "验证结果",
+            "passed": "通过状态",
+            "failed": "失败状态",
+            
+            # 码识别相关
+            "code": "码值",
+            "barcode": "条形码",
+            "qrcode": "二维码",
+            "content": "内容",
+            "data": "数据",
+            "text": "文本",
+            
+            # 匹配相关
+            "template": "模板",
+            "similarity": "相似度",
+            "correlation": "相关性",
+            "offset": "偏移量",
+            "shift": "位移",
+            
+            # 测量相关
+            "measurement": "测量值",
+            "dimension": "尺寸",
+            "thickness": "厚度",
+            "width_mm": "宽度(mm)",
+            "height_mm": "高度(mm)",
+            "depth": "深度",
+            "volume": "体积",
+            
+            # 颜色相关
+            "color": "颜色",
+            "gray": "灰度",
+            "brightness": "亮度",
+            "contrast": "对比度",
+            "saturation": "饱和度",
+            "hue": "色调",
+            
+            # 通信相关
+            "device_id": "设备ID",
+            "connection": "连接",
+            "sent": "已发送",
+            "received": "已接收",
+            "send_count": "发送次数",
+            "receive_count": "接收次数",
+        }
+        
+        return translations.get(field_name, field_name)
 
     def _add_result_group(self, title: str, items: List[Tuple[str, str]]):
         """添加结果组"""
@@ -801,7 +906,7 @@ class EnhancedResultPanel(QWidget):
         self.data_selectors = []
 
     def add_result(self, result_data: ResultData, category: str = ""):
-        """添加结果"""
+        """添加结果（优化版：相同模块共用一个结果面板）"""
         # 自动检测结果类别
         if not category:
             tool_name = result_data.tool_name or ""
@@ -825,7 +930,23 @@ class EnhancedResultPanel(QWidget):
         result_data.result_category = category
 
         timestamp = time.time()
-        self._results.append((result_data, category, timestamp))
+        tool_name = result_data.tool_name or "未知"
+        
+        # 检查是否已存在相同模块的结果，如果存在则更新
+        existing_index = -1
+        for i, (existing_data, existing_category, existing_time) in enumerate(self._results):
+            if existing_data.tool_name == tool_name:
+                existing_index = i
+                break
+        
+        if existing_index >= 0:
+            # 更新现有结果
+            self._results[existing_index] = (result_data, category, timestamp)
+            self._logger.debug(f"更新现有模块结果: {tool_name}")
+        else:
+            # 添加新结果
+            self._results.append((result_data, category, timestamp))
+            self._logger.debug(f"添加新模块结果: {tool_name}")
 
         # 限制数量
         if len(self._results) > 500:
@@ -1226,6 +1347,21 @@ class EnhancedResultPanel(QWidget):
         """清空结果"""
         self._results.clear()
         self._update_result_list()
+
+    def remove_result_by_tool_name(self, tool_name: str):
+        """根据工具名称移除结果
+        
+        Args:
+            tool_name: 工具名称
+        """
+        # 找到并移除匹配的结果
+        self._results = [
+            (result_data, category, timestamp)
+            for result_data, category, timestamp in self._results
+            if result_data.tool_name != tool_name
+        ]
+        self._update_result_list()
+        self._logger.info(f"已移除模块 '{tool_name}' 的结果")
 
     def set_available_modules(self, modules: Dict[str, Dict[str, DataType]]):
         """设置可用模块数据

@@ -199,7 +199,7 @@ from core.solution_file_manager import (
     SolutionFileManager,
 )
 from core.tool_base import ToolBase, ToolRegistry
-from data.image_data import ImageData
+from data.image_data import ImageData, ResultData
 from modules.camera.camera_manager import (
     CameraInfo,
     CameraManager,
@@ -2146,6 +2146,9 @@ class MainWindow(QMainWindow):
                 # 只处理第一个选中的工具项
                 selected_item = selected_items[0]
                 if isinstance(selected_item, GraphicsToolItem):
+                    # 收集可用模块数据并传递给属性面板
+                    self._update_property_panel_modules()
+                    
                     # 显示工具属性
                     self._logger.info(
                         f"选择了工具: {selected_item.tool.name} ({selected_item.tool.tool_name})"
@@ -2226,6 +2229,14 @@ class MainWindow(QMainWindow):
         if tool.tool_name in self._image_cache:
             del self._image_cache[tool.tool_name]
             self._logger.info(f"[MAIN] 从图像缓存中移除工具: {tool.tool_name}")
+
+        # 从结果面板中移除该模块的结果
+        if hasattr(self, "result_dock") and self.result_dock:
+            try:
+                self.result_dock.remove_result_by_tool_name(tool.tool_name)
+                self._logger.info(f"[MAIN] 从结果面板中移除模块结果: {tool.tool_name}")
+            except Exception as e:
+                self._logger.error(f"[MAIN] 从结果面板中移除模块结果失败: {e}")
 
         # 验证删除操作的完整性
         post_delete_tool_count = len(self.tool_items)
@@ -2312,10 +2323,25 @@ class MainWindow(QMainWindow):
             # 首先尝试精确匹配
             if tool_name in self.current_procedure._tools:
                 tool = self.current_procedure._tools[tool_name]
+                
+                # 更新参数前记录旧值
+                old_value = tool.get_param(param_name, "<未设置>")
+                self._logger.debug(f"参数旧值: {param_name} = {old_value}")
+                
                 tool.set_param(param_name, new_value)
                 self._logger.info(
                     f"已更新工具参数: {tool._name}.{param_name} = {new_value}"
                 )
+                
+                # 验证参数是否已保存
+                saved_value = tool.get_param(param_name, "<未设置>")
+                self._logger.debug(f"参数新值验证: {param_name} = {saved_value}")
+                
+                # 如果是连接相关参数，记录所有参数
+                if param_name in ["目标连接", "连接ID"]:
+                    all_params = tool.get_all_params()
+                    self._logger.info(f"工具当前所有参数: {list(all_params.keys())}")
+                    self._logger.info(f"目标连接参数值: {all_params.get('目标连接', all_params.get('连接ID', '未找到'))}")
 
                 # 调用initialize方法应用参数变更
                 if hasattr(tool, "initialize") and callable(tool.initialize):
@@ -2624,9 +2650,39 @@ class MainWindow(QMainWindow):
             # 传递给结果面板
             if available_modules:
                 self.result_dock.set_available_modules(available_modules)
+                
+            # 同时更新属性面板的可用模块数据（用于数据内容选择器）
+            # 转换为属性面板需要的格式：{模块名: {字段名: 值}}
+            property_panel_modules = {}
+            if self.solution.procedures:
+                for procedure in self.solution.procedures:
+                    if procedure is None:
+                        continue
+                    for tool in procedure.tools:
+                        if tool is None:
+                            continue
+                        tool_name = getattr(tool, "tool_name", "Unknown")
+                        tool_instance = getattr(tool, "name", "") or ""
+                        module_name = (
+                            f"{tool_name}_{tool_instance}"
+                            if tool_instance
+                            else tool_name
+                        )
+                        if hasattr(tool, "_result_data") and tool._result_data is not None:
+                            result_data = tool._result_data
+                            if module_name not in property_panel_modules:
+                                property_panel_modules[module_name] = {}
+                            if hasattr(result_data, "_values"):
+                                for key, value in result_data._values.items():
+                                    property_panel_modules[module_name][key] = value
+            
+            if property_panel_modules:
+                if hasattr(self, "property_dock") and self.property_dock:
+                    self.property_dock.widget().set_available_modules(property_panel_modules)
+                    self._logger.info(f"更新属性面板模块数据（流程运行后）: {list(property_panel_modules.keys())}")
 
         except Exception as e:
-            self._logger.error(f"收集工具输出数据失败: {e}")
+            self._logger.error(f"收集工具输出数据失败: {e}", exc_info=True)
 
     def _get_data_type(self, value):
         """根据值获取数据类型"""
@@ -2654,6 +2710,61 @@ class MainWindow(QMainWindow):
             return DataType.RECT
         else:
             return DataType.UNKNOWN
+
+    def _update_property_panel_modules(self):
+        """更新属性面板的可用模块数据
+        
+        收集所有工具的输出数据，传递给属性面板用于数据内容选择
+        """
+        try:
+            available_modules = {}
+            
+            self._logger.debug(f"开始收集可用模块数据，procedures数量: {len(self.solution.procedures) if self.solution.procedures else 0}")
+            
+            if self.solution.procedures:
+                for procedure in self.solution.procedures:
+                    if procedure is None:
+                        continue
+                    
+                    for tool in procedure.tools:
+                        if tool is None:
+                            continue
+                        
+                        tool_name = getattr(tool, "tool_name", "Unknown")
+                        tool_instance = getattr(tool, "name", "") or ""
+                        module_name = (
+                            f"{tool_name}_{tool_instance}"
+                            if tool_instance
+                            else tool_name
+                        )
+                        
+                        self._logger.debug(f"检查工具: {module_name}, has _result_data: {hasattr(tool, '_result_data')}")
+                        
+                        # 检查 _result_data
+                        if hasattr(tool, "_result_data") and tool._result_data is not None:
+                            result_data = tool._result_data
+                            
+                            if module_name not in available_modules:
+                                available_modules[module_name] = {}
+                            
+                            # 获取结果数据的所有值
+                            if hasattr(result_data, "_values"):
+                                values_count = len(result_data._values)
+                                self._logger.debug(f"  工具 {module_name} 有 {values_count} 个值")
+                                for key, value in result_data._values.items():
+                                    available_modules[module_name][key] = value
+                        else:
+                            self._logger.debug(f"  工具 {module_name} 没有 _result_data 或数据为 None")
+            
+            # 传递给属性面板
+            if hasattr(self, "property_dock") and self.property_dock:
+                self.property_dock.widget().set_available_modules(available_modules)
+                self._logger.info(f"更新属性面板模块数据: {list(available_modules.keys())}")
+            else:
+                self._logger.warning("property_dock 不存在，无法更新模块数据")
+                
+        except Exception as e:
+            self._logger.error(f"更新属性面板模块数据失败: {e}", exc_info=True)
 
     def _get_chinese_key_name(self, key: str) -> str:
         """将英文键名转换为中文"""
@@ -2755,8 +2866,6 @@ class MainWindow(QMainWindow):
                 else:
                     return
 
-                from data.image_data import ResultData
-
                 display_result = ResultData()
                 display_result.set_value(display_key, actual_value)
                 display_result.set_value("原始键名", key)
@@ -2803,6 +2912,9 @@ class MainWindow(QMainWindow):
 
             # 将结果添加到结果面板
             if hasattr(tool, "_result_data") and tool._result_data:
+                # 确保结果数据包含工具名称
+                if not tool._result_data.tool_name:
+                    tool._result_data.tool_name = tool.tool_name
                 self.result_dock.add_result(tool._result_data)
                 self._logger.debug(f"结果已添加到结果面板: {tool.tool_name}")
         except Exception as e:
@@ -3734,10 +3846,21 @@ class MainWindow(QMainWindow):
 
                 # 执行工具
                 tool.run()
+                
+                # 获取工具的结果数据
+                result_data = tool.get_result()
+                
+                # 将结果传递给下游工具（支持通讯工具等获取上游数据）
+                output = tool.get_output("OutputImage")
+                if output and output.is_valid:
+                    self._propagate_result_to_downstream(tool, output, result_data)
 
                 # 将结果添加到结果面板
-                if hasattr(tool, "_result_data") and tool._result_data:
-                    self.result_dock.add_result(tool._result_data)
+                if result_data:
+                    # 确保结果数据包含工具名称
+                    if not result_data.tool_name:
+                        result_data.tool_name = tool.tool_name
+                    self.result_dock.add_result(result_data)
                     self._logger.debug(
                         f"结果已添加到结果面板: {tool.tool_name}"
                     )
@@ -3922,6 +4045,37 @@ class MainWindow(QMainWindow):
                     return tool_name_map[from_tool_name]
 
         return None
+
+    def _propagate_result_to_downstream(self, tool: ToolBase, 
+                                        output: ImageData, 
+                                        result: ResultData):
+        """将工具的输出和结果传递给下游工具
+
+        支持通讯工具等获取上游工具的检测结果数据。
+
+        Args:
+            tool: 当前工具
+            output: 输出图像数据
+            result: 输出结果数据
+        """
+        if not self.current_procedure:
+            return
+
+        # 获取从当前工具出发的所有连接
+        connections = self.current_procedure.get_connections_from(tool._name)
+        
+        for conn in connections:
+            target_tool = self.current_procedure.get_tool(conn.to_tool)
+            if target_tool is not None:
+                # 设置图像输入
+                target_tool.set_input(output, conn.to_port)
+                # 设置上游结果数据（供通讯工具等使用）
+                if result is not None:
+                    target_tool.set_upstream_result(result)
+                    self._logger.debug(
+                        f"传递结果数据: {tool.tool_name} -> {target_tool.tool_name}, "
+                        f"数据字段: {list(result.get_all_values().keys())}"
+                    )
 
     def run_continuous(self):
         """连续运行 - 按模块连接关系传递图像数据"""

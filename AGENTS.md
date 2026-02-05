@@ -365,3 +365,412 @@ Detailed explanation of changes"
 - `docs:` - Documentation
 - `test:` - Tests
 - `refactor:` - Code refactoring
+
+### 11. Property Panel Signal Connection Issues
+
+**Problem**: Tool parameters (like "目标连接" and "数据内容") not being saved when user selects values from dropdown/combobox
+
+**Error Messages**:
+```
+ERROR - 未选择连接
+ERROR - 可用参数: ['目标连接', '__type_目标连接', ...]
+目标连接: '' (类型: str)
+```
+
+**Root Cause**: 
+1. `QComboBox` using `currentTextChanged` signal sends display text instead of actual value (userData)
+2. `DataContentSelector` signal `data_selected` not connected to property panel's parameter change handler
+3. Empty string values triggering unnecessary signal emissions
+
+**Solution**:
+```python
+# In ui/property_panel.py
+
+# 1. Change signal from currentTextChanged to currentIndexChanged
+elif isinstance(widget, QComboBox):
+    widget.currentIndexChanged.connect(
+        lambda index, w=widget, p=param_name: self._on_combobox_changed(p, w)
+    )
+    # Add activated signal as backup for manual selection
+    widget.activated.connect(
+        lambda index, w=widget, p=param_name: self._on_combobox_activated(p, w)
+    )
+
+# 2. Create handler to get userData instead of display text
+def _on_combobox_changed(self, param_name: str, combobox: QComboBox):
+    current_data = combobox.currentData()  # Get actual value
+    current_text = combobox.currentText()  # Get display text
+    value = current_data if current_data is not None else current_text
+    self._on_parameter_changed(param_name, value)
+
+# 3. Connect DataContentSelector signal
+else:
+    if hasattr(widget, 'data_selected') and hasattr(widget, 'text_edit'):
+        widget.data_selected.connect(
+            partial(self._on_parameter_changed, param_name)
+        )
+        widget.text_edit.textChanged.connect(
+            partial(self._on_parameter_changed, param_name)
+        )
+
+# 4. Avoid setting empty values
+if value is not None and str(value).strip():
+    # Set current index or text
+else:
+    # Skip setting empty values
+```
+
+**Debugging Tips**:
+- Add detailed logging at each step: signal connection → signal emission → parameter change → parameter save
+- Use `print()` in static methods (like `ParameterWidgetFactory`) where `self` is not available
+- Check signal connection order: widget creation → signal connection → value setting
+- Verify parameter persistence: tool creation → parameter initialization → user selection → parameter save → tool execution
+
+**Verification**:
+```bash
+# Check logs for these patterns:
+【属性面板】下拉框激活(activated): 目标连接, index=0, currentText='...', currentData='...'
+【属性面板】参数变更: 目标连接 = '...' (类型: str)
+【set_param】设置参数: 工具名.目标连接 = '...' (旧值: '')
+【调试】最终目标连接: '...'
+```
+
+### 12. Communication Tool Data Collection Logic
+
+**Problem**: SendDataTool sending entire upstream data dictionary instead of specific field selected by user
+
+**Received Data**:
+```python
+{'data': {'OutputImage': ImageData(...), 'Width': 3072, 'Height': 2048, 'Channels': 3}}
+```
+
+**Expected Data** (when user selects "Width"):
+```python
+{'Width': 3072}
+```
+
+**Root Cause**: `_collect_input_data()` method sending entire `upstream_values` dict instead of extracting specific field
+
+**Solution**:
+```python
+# In tools/communication/enhanced_communication.py
+
+if "." in data_content and not data_content.startswith("{"):
+    parts = data_content.split(".", 1)
+    if len(parts) == 2:
+        module_name, field_name = parts
+        if upstream_values:
+            # Extract specific field value
+            if field_name in upstream_values:
+                field_value = upstream_values[field_name]
+                input_data = {field_name: field_value}
+            else:
+                # Field not found, send all data with warning
+                input_data = {"data": upstream_values}
+```
+
+**Key Insight**: User selection format is "ModuleName.FieldName" (e.g., "图像读取器_1.Width"), need to parse and extract specific field from upstream data.
+
+### 13. ReceiveDataTool Input Validation
+
+**Problem**: ReceiveDataTool throws "输入数据无效" (Input data invalid) error when executing
+
+**Error Message**:
+```
+ErrorManager - ERROR - [ERROR] 工具执行错误: 接收数据_1: [400] 输入数据无效
+```
+
+**Root Cause**: 
+`ReceiveDataTool` inherits default `_check_input()` from `ToolBase`, which checks if `_input_data` (input image) exists and is valid. But receive data tool doesn't need input image - it receives data from external connection.
+
+**Solution**:
+```python
+# In ReceiveDataTool class
+
+def _check_input(self) -> bool:
+    """Check input data validity
+    
+    Receive data tool doesn't need input image data,
+    it receives data from external connection, so always return True
+    """
+    return True
+```
+
+**Important**: Tools that don't need input image data (like communication tools) must override `_check_input()` to return `True`.
+
+### 14. Connection List Format Consistency
+
+**Problem**: SendDataTool and ReceiveDataTool use different formats for connection list, causing "connection not found" errors
+
+**SendDataTool Format**: `device_id: display_name` (e.g., `conn_123: [conn_123] TCP客户端 - Name`)
+**ReceiveDataTool Format (Old)**: `display_name` only (e.g., `[conn_123] TCP客户端 - Name`)
+
+**Root Cause**: Inconsistent `_get_available_connections()` implementation between tools
+
+**Solution**:
+```python
+# Unified format for both tools
+def _get_available_connections(self) -> List[str]:
+    """Get available connections (unified format: device_id: display_name)"""
+    try:
+        conn_manager = _get_comm_manager()
+        connections = conn_manager.get_available_connections()
+        result = []
+        for conn in connections:
+            if conn.get("connected"):
+                device_id = conn.get("device_id", conn.get("name", ""))
+                display_name = conn.get("display_name", "")
+                if device_id and display_name:
+                    result.append(f"{device_id}: {display_name}")
+                elif display_name:
+                    result.append(display_name)
+        return result
+    except Exception as e:
+        self._logger.error(f"Failed to get connections: {e}")
+        return []
+```
+
+**Best Practice**: Always use consistent connection identifier format across all communication tools. Support multiple parsing formats in `_get_connection_by_display_name()`:
+- `device_id: display_name`
+- `display_name` only
+- `[device_id] display_name` (bracket format)
+
+### 15. Enhanced Result Panel Implementation
+
+**Overview**: `ui/enhanced_result_panel.py` provides comprehensive result visualization with support for multiple result types, data export, and visual rendering.
+
+**Core Classes**:
+
+1. **ResultCategory (Enum)**: Defines result types (BARCODE, QRCODE, MATCH, CALIPER, BLOB, OCR, etc.)
+
+2. **EnhancedResultPanel**: Main panel with tree-based result list, category filtering, search, and data export
+
+3. **ResultDetailWidget**: Displays detailed information for different result types
+
+4. **DataSelectorWidget**: Dynamic data type selector for viewing different data types
+
+5. **ResultVisualizationWidget**: Graphical visualization of detection results with bounding boxes
+
+**Key Features**:
+- **Smart Result Classification**: Auto-detects result category from tool name
+  - Contains "YOLO" → detection
+  - Contains "条码"/"二维码"/"读码" → code
+  - Contains "匹配" → match
+  - Contains "测量"/"卡尺" → caliper
+  - Contains "Blob" → blob
+  - Contains "OCR" → ocr
+
+- **Result Deduplication**: New results from same module replace old ones, preventing infinite list growth
+
+- **Performance Optimization**: Limits max results to 500 to prevent memory overflow
+
+- **Data Export**: Supports CSV and JSON formats for result analysis
+
+**Usage Example**:
+```python
+from ui.enhanced_result_panel import EnhancedResultPanel
+from data.result_data import ResultData
+
+# Create panel
+result_panel = EnhancedResultPanel()
+
+# Add result
+result_data = ResultData(
+    tool_name="条码识别_1",
+    status=True,
+    values={"codes": [{"data": "123456", "type": "CODE128"}]}
+)
+result_panel.add_result(result_data, category="barcode")
+```
+
+**Integration in Main Window**:
+```python
+from ui.enhanced_result_panel import EnhancedResultPanel
+
+self.result_panel = EnhancedResultPanel()
+self.result_panel.result_selected.connect(self._on_result_selected)
+self.result_panel.data_connection_requested.connect(self._on_data_connection_requested)
+```
+
+### 16. Python Class Constructor Parameter Rules
+
+**Problem**: `TypeError: Class.__init__() got an unexpected keyword argument 'xxx'`
+
+**Root Cause**: Attempting to pass attributes as constructor parameters when they should be set after object creation.
+
+**Wrong Example**:
+```python
+class DataExtractionRule:
+    def __init__(self, rule_type, name, description, enabled=True):
+        self.rule_type = rule_type
+        self.name = name
+        self.description = description
+        self.enabled = enabled
+        # Other attributes are NOT in __init__ parameters
+        self.scale_offset_rule = None
+        self.bit_extract_rule = None
+        # ...
+
+# WRONG: This will cause TypeError
+rule = DataExtractionRule(
+    rule_type=ExtractionRuleType.SCALE_OFFSET,
+    name="温度传感器",
+    scale_offset_rule=ScaleOffsetRule(scale=0.1, offset=-40.0)  # ERROR!
+)
+```
+
+**Correct Example**:
+```python
+# CORRECT: Create object first, then set attributes
+rule = DataExtractionRule(
+    rule_type=ExtractionRuleType.SCALE_OFFSET,
+    name="温度传感器",
+    description="温度转换规则"
+)
+rule.scale_offset_rule = ScaleOffsetRule(scale=0.1, offset=-40.0)
+
+# For predefined rules, use a factory function
+def _create_predefined_rules():
+    rules = {}
+    
+    temp_rule = DataExtractionRule(
+        rule_type=ExtractionRuleType.SCALE_OFFSET,
+        name="温度传感器",
+        description="将原始值转换为温度值"
+    )
+    temp_rule.scale_offset_rule = ScaleOffsetRule(scale=0.1, offset=-40.0)
+    rules["温度传感器"] = temp_rule
+    
+    return rules
+```
+
+**Key Rules**:
+1. **Check `__init__` signature** before passing parameters
+2. **Only pass parameters defined in `__init__`**
+3. **Set other attributes after object creation**
+4. **Use factory functions** for complex object initialization
+5. **Use lazy initialization** for module-level predefined objects to avoid import-time errors
+
+**Common Mistake Pattern**:
+```python
+# Module-level predefined objects - DANGEROUS at import time
+PREDEFINED_RULES = {
+    "温度传感器": DataExtractionRule(
+        rule_type=ExtractionRuleType.SCALE_OFFSET,
+        scale_offset_rule=ScaleOffsetRule(...)  # May cause errors
+    )
+}
+
+# BETTER: Lazy initialization
+PREDEFINED_RULES: Dict[str, DataExtractionRule] = {}
+
+def get_predefined_rules():
+    global PREDEFINED_RULES
+    if not PREDEFINED_RULES:
+        PREDEFINED_RULES = _create_predefined_rules()
+    return PREDEFINED_RULES.copy()
+```
+
+### 17. Hot Reload Performance Optimization
+
+**Problem**: Application startup takes 20+ seconds due to hot reload module mapping initialization.
+
+**Root Cause**: `HotReloadManager._initialize_module_mapping()` traverses entire `sys.path` which includes many system directories.
+
+**Wrong Implementation**:
+```python
+def _initialize_module_mapping(self):
+    """初始化模块路径映射"""
+    for path in sys.path:  # ❌ 遍历整个sys.path，包含系统目录
+        if os.path.exists(path):
+            for root, dirs, files in os.walk(path):
+                # ... 处理文件
+```
+
+**Optimized Implementation**:
+```python
+def _initialize_module_mapping(self):
+    """初始化模块路径映射（优化版：只监控指定路径）"""
+    # ✅ 只遍历需要监控的路径
+    for path in self.paths:
+        if os.path.exists(path):
+            for root, dirs, files in os.walk(path):
+                # ... 处理项目文件
+```
+
+**Performance Improvement**:
+- Before: 20+ seconds (scanning entire sys.path)
+- After: <1 second (scanning only project directories)
+
+**Key Points**:
+1. Only scan directories that need monitoring
+2. Avoid scanning system directories in sys.path
+3. Use lazy loading for module mapping
+4. Consider using file system events instead of full scan
+
+### 18. Missing Method Reference Errors
+
+**Problem**: `AttributeError: 'ClassName' object has no attribute '_method_name'`
+
+**Root Cause**: Method was renamed or removed, but references were not updated.
+
+**Example Error**:
+```
+[热重载] 回调函数执行失败: 'ToolLibraryWidget' object has no attribute '_setup_category_tree'
+```
+
+**Solution**:
+```python
+# Before (Error)
+def refresh(self):
+    self._load_tools()
+    self._update_tool_list()
+    self._setup_category_tree()  # ❌ Method doesn't exist
+
+# After (Fixed)
+def refresh(self):
+    self._load_tools()
+    self._update_tool_list()  # ✅ This method already includes category tree update
+```
+
+**Prevention**:
+1. Use IDE refactoring tools when renaming methods
+2. Search for all references before deleting methods
+3. Add unit tests to catch missing method errors
+4. Use `hasattr()` check for optional methods:
+   ```python
+   if hasattr(self, '_setup_category_tree'):
+       self._setup_category_tree()
+   ```
+
+### 19. Qt Signal Blocking in Initialization
+
+**Problem**: Qt widgets trigger signals during initialization, causing unwanted side effects.
+
+**Example**: Dropdown selection triggers config dialog during widget initialization.
+
+**Solution**:
+```python
+def _update_display(self):
+    """更新显示"""
+    # ✅ Block signals during programmatic updates
+    self.rule_type_combo.blockSignals(True)
+    
+    # Update widget state
+    self._set_combo_by_rule_type(self._rule.rule_type)
+    
+    # Restore signals
+    self.rule_type_combo.blockSignals(False)
+```
+
+**Best Practices**:
+1. Always use `blockSignals(True)` before programmatic UI updates
+2. Restore signals with `blockSignals(False)` after updates
+3. Distinguish between user actions and programmatic updates
+4. Consider using `QSignalBlocker` context manager:
+   ```python
+   from PyQt5.QtCore import QSignalBlocker
+   
+   with QSignalBlocker(self.combo_box):
+       self.combo_box.setCurrentIndex(index)
+   ```

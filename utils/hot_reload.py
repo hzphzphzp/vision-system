@@ -78,18 +78,21 @@ class HotReloadManager:
         self._initialize_module_mapping()
 
     def _initialize_module_mapping(self):
-        """初始化模块路径映射"""
-        for path in sys.path:
+        """初始化模块路径映射（优化版：只监控指定路径）"""
+        # 只遍历需要监控的路径，而不是整个sys.path
+        for path in self.paths:
             if os.path.exists(path):
                 for root, dirs, files in os.walk(path):
                     for file in files:
                         if file.endswith(".py") and not file.startswith("__"):
                             module_path = os.path.join(root, file)
+                            # 计算相对于项目根目录的模块名
                             relative_path = os.path.relpath(module_path, path)
-                            module_name = relative_path.replace(os.sep, ".")[
-                                :-3
-                            ]
-                            self.modules_to_reload[module_path] = module_name
+                            module_name = relative_path.replace(os.sep, ".")[:-3]
+                            # 添加项目前缀
+                            parent_dir = os.path.basename(path)
+                            full_module_name = f"{parent_dir}.{module_name}"
+                            self.modules_to_reload[module_path] = full_module_name
 
     def _on_files_changed(self, changed_files: List[str]):
         """文件变化处理函数"""
@@ -99,12 +102,33 @@ class HotReloadManager:
 
         # 重新加载相关模块
         for file_path in changed_files:
+            # 尝试多种方式查找模块
+            module_names_to_try = []
+            
+            # 方式1：使用预计算的模块名
             if file_path in self.modules_to_reload:
-                module_name = self.modules_to_reload[file_path]
+                module_names_to_try.append(self.modules_to_reload[file_path])
+            
+            # 方式2：从文件路径推导模块名
+            for path in self.paths:
+                if file_path.startswith(path):
+                    relative_path = os.path.relpath(file_path, path)
+                    module_name = relative_path.replace(os.sep, ".")[:-3]
+                    parent_dir = os.path.basename(path)
+                    full_module_name = f"{parent_dir}.{module_name}"
+                    if full_module_name not in module_names_to_try:
+                        module_names_to_try.append(full_module_name)
+                    # 也尝试不带父目录前缀的版本
+                    if module_name not in module_names_to_try:
+                        module_names_to_try.append(module_name)
+            
+            # 尝试重新加载模块
+            for module_name in module_names_to_try:
                 try:
                     if module_name in sys.modules:
                         importlib.reload(sys.modules[module_name])
                         print(f"[热重载] 重新加载模块: {module_name}")
+                        break  # 成功加载后跳出
                 except Exception as e:
                     print(f"[热重载] 重新加载模块失败 {module_name}: {e}")
 

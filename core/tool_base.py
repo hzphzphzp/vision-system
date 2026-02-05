@@ -287,6 +287,7 @@ class ToolBase(ABC):
         self._input_data: Optional[ImageData] = None
         self._output_data: Optional[ImageData] = None
         self._result_data: Optional[ResultData] = None
+        self._upstream_result_data: Optional[ResultData] = None  # 上游工具的结果数据
         self._is_enabled = True
         self._is_running = False
         self._last_error: Optional[str] = None
@@ -411,7 +412,7 @@ class ToolBase(ABC):
             if options is not None:
                 self._params[f"__options_{key}"] = options
 
-            self._logger.debug(f"设置参数: {self._name}.{key} = {fixed_value}")
+            self._logger.info(f"【set_param】设置参数: {self._name}.{key} = '{fixed_value}' (旧值: '{old_value}')")
 
             # 触发参数变更回调
             self._on_param_changed(key, old_value, fixed_value)
@@ -901,6 +902,38 @@ class ToolBase(ABC):
     def has_output(self) -> bool:
         """检查是否有输出数据"""
         return self._output_data is not None and self._output_data.is_valid
+
+    def set_upstream_result(self, result_data: ResultData):
+        """设置上游工具的结果数据
+
+        在流程执行时，由Procedure调用，将上游工具的ResultData传递给当前工具。
+        通讯工具等可以使用此数据作为发送内容。
+
+        Args:
+            result_data: 上游工具的结果数据
+        """
+        self._upstream_result_data = result_data
+        self._logger.debug(
+            f"设置上游结果数据: {result_data.get_all_values().keys() if result_data else 'None'}"
+        )
+
+    def get_upstream_result(self) -> Optional[ResultData]:
+        """获取上游工具的结果数据
+
+        Returns:
+            上游工具的结果数据，如果没有则返回None
+        """
+        return self._upstream_result_data
+
+    def get_upstream_values(self) -> Dict[str, Any]:
+        """获取上游数据的所有值
+
+        Returns:
+            上游结果数据的字典，如果没有上游数据则返回空字典
+        """
+        if self._upstream_result_data:
+            return self._upstream_result_data.get_all_values()
+        return {}
 
     def run(self) -> bool:
         """

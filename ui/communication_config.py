@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtGui import QBrush, QColor, QFont, QIcon
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -225,6 +225,47 @@ class ConnectionManager:
         """设置状态回调"""
         self._status_callback = callback
 
+    def generate_connection_name(self, protocol_type: str) -> str:
+        """自动生成连接名称
+        
+        命名规则：
+        - 第一个TCP客户端连接：TCP客户端_1
+        - 第一个TCP服务端连接：TCP服务端_1
+        - 后续同类型连接依次递增编号
+        
+        Args:
+            protocol_type: 协议类型（如"TCP客户端"、"TCP服务端"等）
+            
+        Returns:
+            str: 自动生成的连接名称
+        """
+        with self._lock:
+            # 获取当前该协议类型的所有连接
+            existing_names = []
+            for conn in self._connections.values():
+                if conn.protocol_type == protocol_type:
+                    existing_names.append(conn.name)
+            
+            # 查找最大编号
+            max_number = 0
+            prefix = f"{protocol_type}_"
+            
+            for name in existing_names:
+                if name.startswith(prefix):
+                    try:
+                        number = int(name[len(prefix):])
+                        max_number = max(max_number, number)
+                    except ValueError:
+                        # 名称格式不符合，跳过
+                        pass
+            
+            # 生成新名称
+            new_number = max_number + 1
+            new_name = f"{prefix}{new_number}"
+            
+            logger.info(f"[ConnectionManager] 自动生成连接名称: {new_name}")
+            return new_name
+
     def add_connection(self, connection: ProtocolConnection) -> bool:
         """添加连接 - 异步创建协议实例"""
         # 验证配置
@@ -294,17 +335,23 @@ class ConnectionManager:
                     'name': conn.name,
                 }
                 protocol_to_cleanup = conn.protocol_instance
+                # 立即从字典中移除，避免其他线程访问
                 del self._connections[connection_id]
 
-        # 异步清理协议实例（不在锁内执行）
+        # 异步清理协议实例（不在锁内执行，避免阻塞UI）
         if protocol_to_cleanup:
             def cleanup():
                 try:
-                    # 设置停止标志
-                    if hasattr(protocol_to_cleanup, '_running'):
-                        protocol_to_cleanup._running = False
-                except Exception:
-                    pass
+                    # 调用正式的disconnect方法，确保资源正确释放
+                    if hasattr(protocol_to_cleanup, 'disconnect'):
+                        protocol_to_cleanup.disconnect()
+                    # 清除回调，防止内存泄漏
+                    if hasattr(protocol_to_cleanup, 'clear_callbacks'):
+                        protocol_to_cleanup.clear_callbacks()
+                except Exception as e:
+                    logger.error(f"[ConnectionManager] 清理协议实例失败: {e}")
+            
+            # 启动后台线程进行清理
             cleanup_thread = threading.Thread(target=cleanup, daemon=True)
             cleanup_thread.start()
 
@@ -378,6 +425,9 @@ class ConnectionConfigDialog(QDialog):
 
         if connection_id:
             self.load_connection(connection_id)
+        else:
+            # 新建连接时，自动生成默认名称
+            self._generate_default_name()
 
     def setup_ui(self):
         """设置UI - 支持所有协议"""
@@ -460,6 +510,26 @@ class ConnectionConfigDialog(QDialog):
         else:
             self.tcp_config_group.show()
             self.serial_config_group.hide()
+        
+        # 如果名称是自动生成的，根据新协议类型重新生成
+        current_name = self.name_edit.text()
+        if not current_name or "_" in current_name:
+            # 检查是否是自动生成的名称格式
+            parts = current_name.rsplit("_", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                # 是自动生成的名称，重新生成
+                new_name = self.connection_manager.generate_connection_name(protocol_type)
+                self.name_edit.setText(new_name)
+
+    def _generate_default_name(self):
+        """生成默认连接名称
+        
+        根据当前选择的协议类型自动生成名称
+        """
+        protocol_type = self.protocol_combo.currentText()
+        default_name = self.connection_manager.generate_connection_name(protocol_type)
+        self.name_edit.setText(default_name)
+        logger.info(f"[ConnectionConfigDialog] 生成默认连接名称: {default_name}")
 
     def load_connection(self, connection_id: str):
         """加载连接配置"""
@@ -626,57 +696,165 @@ class CommunicationConfigWidget(QWidget):
                 QMessageBox.warning(self, "警告", "更新连接失败")
 
     def delete_connection(self):
-        """删除连接"""
-        current_row = self.connection_table.currentRow()
-        if current_row < 0:
-            QMessageBox.warning(self, "警告", "请先选择要删除的连接")
-            return
+        """删除连接（修复版）
+        
+        修复内容:
+        1. 添加空指针检查，防止item为None时崩溃
+        2. 删除后清除选择状态，避免指向不存在的行
+        3. 添加详细的错误信息和日志记录
+        4. 添加异常处理，防止删除过程中崩溃
+        """
+        try:
+            current_row = self.connection_table.currentRow()
+            if current_row < 0:
+                QMessageBox.warning(self, "警告", "请先选择要删除的连接")
+                return
 
-        connection_id = self.connection_table.item(current_row, 0).data(Qt.UserRole)
+            # 获取当前行的连接项，添加空指针检查
+            item = self.connection_table.item(current_row, 0)
+            if item is None:
+                QMessageBox.warning(self, "警告", "无法获取选中的连接信息")
+                logger.warning(f"[CommunicationConfigWidget] 第{current_row}行的item为None")
+                return
 
-        reply = QMessageBox.question(
-            self, "确认", "确定要删除这个连接吗？",
-            QMessageBox.Yes | QMessageBox.No
-        )
+            connection_id = item.data(Qt.UserRole)
+            if not connection_id:
+                QMessageBox.warning(self, "警告", "连接ID无效")
+                logger.warning(f"[CommunicationConfigWidget] 第{current_row}行的connection_id为空")
+                return
 
-        if reply == QMessageBox.Yes:
-            # 直接移除连接，不等待线程结束（避免UI阻塞）
-            if self.connection_manager.remove_connection(connection_id):
-                self.refresh_connections()
-            else:
-                QMessageBox.warning(self, "警告", "删除连接失败")
+            # 获取连接名称用于显示
+            connection_name = item.text() or connection_id
+
+            reply = QMessageBox.question(
+                self, "确认删除", 
+                f"确定要删除连接 '{connection_name}' 吗？\n\n注意：删除后将断开与该设备的通信。",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No  # 默认选择No，防止误操作
+            )
+
+            if reply == QMessageBox.Yes:
+                logger.info(f"[CommunicationConfigWidget] 开始删除连接: {connection_id}")
+                
+                # 先清除选择，避免删除后指向不存在的行
+                self.connection_table.clearSelection()
+                self.status_label.setText("正在删除...")
+                
+                # 执行删除操作
+                success = self.connection_manager.remove_connection(connection_id)
+                
+                if success:
+                    logger.info(f"[CommunicationConfigWidget] 连接删除成功: {connection_id}")
+                    self.refresh_connections()
+                    self.status_label.setText(f"连接 '{connection_name}' 已删除")
+                    
+                    # 如果还有其他连接，选择第一行
+                    if self.connection_table.rowCount() > 0:
+                        self.connection_table.selectRow(0)
+                else:
+                    error_msg = f"删除连接 '{connection_name}' 失败。\n可能原因：\n1. 连接不存在\n2. 连接正在使用中\n3. 系统资源不足"
+                    logger.error(f"[CommunicationConfigWidget] 删除连接失败: {connection_id}")
+                    QMessageBox.warning(self, "删除失败", error_msg)
+                    self.status_label.setText("删除失败")
+                    
+                    # 恢复选择状态
+                    if current_row < self.connection_table.rowCount():
+                        self.connection_table.selectRow(current_row)
+                    
+        except Exception as e:
+            error_msg = f"删除连接时发生错误: {str(e)}"
+            logger.error(f"[CommunicationConfigWidget] {error_msg}", exc_info=True)
+            QMessageBox.critical(self, "错误", error_msg)
+            self.status_label.setText("删除出错")
 
     def refresh_connections(self):
-        """刷新连接列表"""
-        connections = self.connection_manager.get_all_connections()
-        self.connection_table.setRowCount(len(connections))
-
-        for i, conn in enumerate(connections):
-            name_item = QTableWidgetItem(conn.name)
-            name_item.setData(Qt.UserRole, conn.id)
-            self.connection_table.setItem(i, 0, name_item)
-            self.connection_table.setItem(i, 1, QTableWidgetItem(conn.protocol_type))
+        """刷新连接列表（增强版）
+        
+        改进内容:
+        1. 添加异常处理，防止刷新过程中崩溃
+        2. 保存当前选择状态，刷新后恢复
+        3. 添加日志记录，便于调试
+        """
+        try:
+            # 保存当前选中的连接ID
+            selected_connection_id = None
+            current_row = self.connection_table.currentRow()
+            if current_row >= 0:
+                item = self.connection_table.item(current_row, 0)
+                if item:
+                    selected_connection_id = item.data(Qt.UserRole)
             
-            status_item = QTableWidgetItem(conn.status)
-            if conn.is_connected:
-                status_item.setBackground(Qt.green)
-            else:
-                status_item.setBackground(Qt.red)
-            self.connection_table.setItem(i, 2, status_item)
+            # 获取连接列表
+            connections = self.connection_manager.get_all_connections()
+            logger.debug(f"[CommunicationConfigWidget] 刷新连接列表: {len(connections)}个连接")
             
-            self.connection_table.setItem(i, 3, QTableWidgetItem(str(conn.send_count)))
-            self.connection_table.setItem(i, 4, QTableWidgetItem(str(conn.receive_count)))
-            self.connection_table.setItem(i, 5, QTableWidgetItem(str(conn.error_count)))
+            # 设置表格行数
+            self.connection_table.setRowCount(len(connections))
+            
+            # 填充数据
+            new_selected_row = -1
+            for i, conn in enumerate(connections):
+                # 名称列
+                name_item = QTableWidgetItem(conn.name)
+                name_item.setData(Qt.UserRole, conn.id)
+                self.connection_table.setItem(i, 0, name_item)
+                
+                # 协议类型列
+                self.connection_table.setItem(i, 1, QTableWidgetItem(conn.protocol_type))
+                
+                # 状态列
+                status_item = QTableWidgetItem(conn.status)
+                if conn.is_connected:
+                    status_item.setBackground(QBrush(QColor(46, 204, 113)))  # 绿色
+                    status_item.setForeground(QBrush(QColor(255, 255, 255)))  # 白色文字
+                else:
+                    status_item.setBackground(QBrush(QColor(231, 76, 60)))  # 红色
+                    status_item.setForeground(QBrush(QColor(255, 255, 255)))  # 白色文字
+                self.connection_table.setItem(i, 2, status_item)
+                
+                # 统计列
+                self.connection_table.setItem(i, 3, QTableWidgetItem(str(conn.send_count)))
+                self.connection_table.setItem(i, 4, QTableWidgetItem(str(conn.receive_count)))
+                self.connection_table.setItem(i, 5, QTableWidgetItem(str(conn.error_count)))
+                
+                # 检查是否是之前选中的连接
+                if conn.id == selected_connection_id:
+                    new_selected_row = i
+            
+            # 恢复选择状态
+            if new_selected_row >= 0:
+                self.connection_table.selectRow(new_selected_row)
+            elif self.connection_table.rowCount() > 0:
+                # 如果之前选中的连接不在了，选择第一行
+                self.connection_table.selectRow(0)
+            
+            # 更新状态栏
+            connected_count = sum(1 for c in connections if c.is_connected)
+            self.status_label.setText(f"共{len(connections)}个连接，{connected_count}个已连接")
+            
+        except Exception as e:
+            logger.error(f"[CommunicationConfigWidget] 刷新连接列表失败: {e}", exc_info=True)
+            self.status_label.setText("刷新失败")
 
     def on_selection_changed(self):
-        """选择变化时"""
-        current_row = self.connection_table.currentRow()
-        if current_row >= 0:
-            connection_id = self.connection_table.item(current_row, 0).data(Qt.UserRole)
-            connection = self.connection_manager.get_connection(connection_id)
-            if connection:
-                self.status_label.setText(f"选中: {connection.name} ({connection.status})")
-        else:
+        """选择变化时（增强版）"""
+        try:
+            current_row = self.connection_table.currentRow()
+            if current_row >= 0:
+                item = self.connection_table.item(current_row, 0)
+                if item:
+                    connection_id = item.data(Qt.UserRole)
+                    connection = self.connection_manager.get_connection(connection_id)
+                    if connection:
+                        self.status_label.setText(f"选中: {connection.name} ({connection.status})")
+                    else:
+                        self.status_label.setText(f"选中: {item.text()} (连接已断开)")
+                else:
+                    self.status_label.setText("就绪")
+            else:
+                self.status_label.setText("就绪")
+        except Exception as e:
+            logger.debug(f"[CommunicationConfigWidget] 选择变化处理异常: {e}")
             self.status_label.setText("就绪")
 
     def on_connection_status_changed(self, connection):

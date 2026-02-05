@@ -425,10 +425,11 @@ class Procedure:
 
                     # 保存结果
                     output = tool.get_output()
+                    result = tool.get_result()
                     if output is not None:
                         results[tool_name] = {
                             "output": output,
-                            "result": tool.get_result(),
+                            "result": result,
                         }
                         self._logger.debug(
                             f"工具 {tool_name} 输出: {output.shape if output.is_valid else '无效'}"
@@ -437,8 +438,8 @@ class Procedure:
                         # 更新当前可用的输入数据为该工具的输出
                         current_input = output
 
-                    # 将输出传递给下一个工具
-                    self._propagate_output(tool_name, output)
+                    # 将输出和结果传递给下一个工具
+                    self._propagate_output(tool_name, output, result)
 
                 except Exception as e:
                     self._logger.error(
@@ -463,13 +464,15 @@ class Procedure:
         finally:
             self._is_running = False
 
-    def _propagate_output(self, tool_name: str, output: Optional[ImageData]):
+    def _propagate_output(self, tool_name: str, output: Optional[ImageData],
+                          result: Optional[ResultData] = None):
         """
-        将工具输出传递给下一个工具
+        将工具输出和结果传递给下一个工具
 
         Args:
             tool_name: 工具名称
-            output: 输出数据
+            output: 输出图像数据
+            result: 输出结果数据（包含检测值等），可选
         """
         if output is None:
             return
@@ -479,6 +482,9 @@ class Procedure:
             target_tool = self._tools.get(conn.to_tool)
             if target_tool is not None:
                 target_tool.set_input(output, conn.to_port)
+                # 同时传递结果数据，供通讯工具等使用
+                if result is not None:
+                    target_tool.set_upstream_result(result)
 
     def reset(self):
         """重置流程状态"""

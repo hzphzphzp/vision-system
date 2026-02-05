@@ -194,9 +194,9 @@ class TCPClient(ProtocolBase):
             return False
 
     def disconnect(self):
-        """断开连接"""
+        """断开连接（非阻塞版本）"""
         logger.info("[TCPClient] 开始断开连接...")
-        
+
         with self._lock:
             if not self._running:
                 logger.info("[TCPClient] 已经在断开状态")
@@ -213,9 +213,12 @@ class TCPClient(ProtocolBase):
         self._stop_health_check()
         logger.info("[TCPClient] 已停止健康检查")
 
+        # 关闭socket（在锁外执行，避免阻塞）
         if sock:
             try:
                 logger.info("[TCPClient] 关闭socket...")
+                # 先设置非阻塞模式，避免shutdown阻塞
+                sock.setblocking(False)
                 sock.shutdown(socket.SHUT_RDWR)
             except:
                 pass
@@ -225,44 +228,72 @@ class TCPClient(ProtocolBase):
                 pass
             logger.info("[TCPClient] socket已关闭")
 
-        # 等待接收线程结束
-        if self._receive_thread and self._receive_thread.is_alive():
-            logger.info("[TCPClient] 等待接收线程结束...")
-            self._receive_thread.join(timeout=1.0)
-            self._receive_thread = None
-            logger.info("[TCPClient] 接收线程已清理")
+        # 向发送队列放入一个None信号，唤醒发送线程
+        try:
+            self._send_queue.put_nowait(None)
+        except queue.Full:
+            pass
 
-        # 等待发送线程结束
-        if self._send_thread and self._send_thread.is_alive():
-            logger.info("[TCPClient] 等待发送线程结束...")
-            self._send_thread.join(timeout=1.0)
-            self._send_thread = None
-            logger.info("[TCPClient] 发送线程已清理")
+        # 清理队列（不阻塞）
+        self._clear_queues()
 
-        # 清理发送队列
-        send_queue_size = self._send_queue.qsize()
-        while not self._send_queue.empty():
-            try:
-                self._send_queue.get_nowait()
-            except queue.Empty:
-                break
-        logger.info(f"[TCPClient] 已清空发送队列 ({send_queue_size}项)")
-
-        # 清理接收队列
-        recv_queue_size = self._receive_queue.qsize()
-        while not self._receive_queue.empty():
-            try:
-                self._receive_queue.get_nowait()
-            except queue.Empty:
-                break
-        logger.info(f"[TCPClient] 已清空接收队列 ({recv_queue_size}项)")
+        # 异步等待线程结束（不阻塞主线程）
+        self._cleanup_threads_async()
 
         self.set_state(ConnectionState.DISCONNECTED)
         self._emit("on_disconnect")
         self._emit = lambda *args, **kwargs: None  # 断开回调引用
         self.clear_callbacks()
-        logger.info("[TCPClient] 回调已清除")
         logger.info("[TCPClient] 断开连接完成")
+
+    def _clear_queues(self):
+        """清空队列（非阻塞）"""
+        # 清理发送队列
+        send_queue_size = self._send_queue.qsize()
+        cleared_send = 0
+        while not self._send_queue.empty():
+            try:
+                self._send_queue.get_nowait()
+                cleared_send += 1
+            except queue.Empty:
+                break
+        if cleared_send > 0:
+            logger.info(f"[TCPClient] 已清空发送队列 ({cleared_send}项)")
+
+        # 清理接收队列
+        recv_queue_size = self._receive_queue.qsize()
+        cleared_recv = 0
+        while not self._receive_queue.empty():
+            try:
+                self._receive_queue.get_nowait()
+                cleared_recv += 1
+            except queue.Empty:
+                break
+        if cleared_recv > 0:
+            logger.info(f"[TCPClient] 已清空接收队列 ({cleared_recv}项)")
+
+    def _cleanup_threads_async(self):
+        """异步清理线程（不阻塞）"""
+        def cleanup():
+            # 等待接收线程结束
+            if self._receive_thread and self._receive_thread.is_alive():
+                self._receive_thread.join(timeout=0.5)
+                if self._receive_thread.is_alive():
+                    logger.warning("[TCPClient] 接收线程未能及时结束")
+                self._receive_thread = None
+
+            # 等待发送线程结束
+            if self._send_thread and self._send_thread.is_alive():
+                self._send_thread.join(timeout=0.5)
+                if self._send_thread.is_alive():
+                    logger.warning("[TCPClient] 发送线程未能及时结束")
+                self._send_thread = None
+
+            logger.info("[TCPClient] 线程清理完成")
+
+        # 启动后台线程进行清理
+        cleanup_thread = threading.Thread(target=cleanup, daemon=True)
+        cleanup_thread.start()
 
     def send(self, data: Union[str, bytes, dict]) -> bool:
         """发送数据"""
@@ -311,18 +342,26 @@ class TCPClient(ProtocolBase):
         """发送数据循环"""
         while self._running:
             try:
-                request = self._send_queue.get(timeout=0.1)
-                if not request:
-                    continue
+                request = self._send_queue.get(timeout=0.05)  # 减少超时时间，更快响应
+                
+                # 检查退出信号
+                if request is None:
+                    logger.debug("[TCPClient] 发送线程收到退出信号")
+                    break
+                
+                if not self._running:
+                    break
 
                 self._process_send_request(request)
 
             except queue.Empty:
+                # 队列为空，继续循环检查_running状态
                 continue
             except Exception as e:
                 if self._running:
                     logger.error(f"[TCPClient] 发送循环异常: {e}")
                 break
+        logger.debug("[TCPClient] 发送线程已退出")
 
     def _process_send_request(self, request: SendRequest):
         """处理发送请求"""
@@ -425,23 +464,34 @@ class TCPClient(ProtocolBase):
         """接收数据循环 - 使用select避免阻塞"""
         while self._running:
             try:
-                # 使用select检查socket是否可读，避免阻塞recv
+                # 检查socket是否存在
                 if self._socket is None:
                     break
-                    
-                ready, _, _ = select.select([self._socket], [], [], 0.1)
+                
+                # 使用select检查socket是否可读，设置较短的超时时间
+                ready, _, _ = select.select([self._socket], [], [], 0.05)
                 if not ready:
+                    # 没有数据可读，继续循环检查_running状态
                     continue
                 
                 # 现在安全地recv，因为select已经确认有数据
-                data = self._socket.recv(4096)
+                try:
+                    data = self._socket.recv(4096)
+                except (socket.error, OSError):
+                    # socket可能已关闭
+                    break
+                    
                 if not data:
+                    # 连接已关闭
                     break
 
                 if self._running:
-                    self._receive_queue.put(data)
-                    # 触发事件
-                    self._emit("on_receive", data)
+                    try:
+                        self._receive_queue.put_nowait(data)
+                        # 触发事件
+                        self._emit("on_receive", data)
+                    except queue.Full:
+                        logger.warning("[TCPClient] 接收队列已满，丢弃数据")
 
             except socket.timeout:
                 continue
@@ -452,7 +502,10 @@ class TCPClient(ProtocolBase):
                 if self._running:
                     logger.debug(f"[TCPClient] 接收异常: {e}")
                 break
-
+        
+        logger.debug("[TCPClient] 接收线程已退出")
+        
+        # 只有在正常运行状态下才触发重连
         if self._running and self._auto_reconnect:
             threading.Timer(self._reconnect_interval, self._reconnect).start()
 
@@ -534,13 +587,15 @@ class TCPClient(ProtocolBase):
 
     def clear_queue(self):
         """清空发送队列"""
+        cleared = 0
         while not self._send_queue.empty():
-                        try:
-                            self._socket.send(b"")
-                        except Exception as e:
-                            logger.warning(f"[TCPClient] 健康检查发送失败: {e}")
-                            # 连接可能已断开，不再继续健康检查
-                            return
+            try:
+                self._send_queue.get_nowait()
+                cleared += 1
+            except queue.Empty:
+                break
+        if cleared > 0:
+            logger.info(f"[TCPClient] 已清空发送队列 ({cleared}项)")
 
 
 if __name__ == "__main__":

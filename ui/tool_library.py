@@ -642,10 +642,8 @@ class ToolLibraryWidget(QWidget):
         """刷新工具库"""
         # 重新加载工具
         self._load_tools()
-        # 更新工具列表显示
+        # 更新工具列表显示（包含分类树刷新）
         self._update_tool_list()
-        # 刷新分类树
-        self._setup_category_tree()
 
 
 class ToolLibraryDockWidget(QDockWidget):

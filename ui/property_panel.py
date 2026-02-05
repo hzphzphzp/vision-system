@@ -99,6 +99,8 @@ class ParameterType(Enum):
     ROI_LINE = "roi_line"  # 直线ROI选择
     ROI_CIRCLE = "roi_circle"  # 圆形ROI选择
     BUTTON = "button"  # 按钮类型（用于触发操作）
+    DATA_CONTENT = "data_content"  # 数据内容选择（用于发送数据工具）
+    EXTRACTION_RULE = "extraction_rule"  # 数据提取规则（用于Modbus TCP等协议）
 
 
 class FilePathSelector(QWidget):
@@ -390,25 +392,36 @@ class ParameterWidgetFactory:
             widget = QComboBox()
             options = kwargs.get("options", [])
             option_labels = kwargs.get("option_labels", {}) or {}
+            
+            # 使用print代替logger，因为静态方法中没有self
+            print(f"【属性面板】创建ENUM控件: param_name={kwargs.get('param_name', 'unknown')}, value='{value}', options数量={len(options)}")
+            print(f"【属性面板】ENUM选项: {options}")
 
             if options:
                 # 使用 option_labels 显示中文名称，如果没有则使用原始值
                 for option in options:
                     display_text = option_labels.get(option, option)
                     widget.addItem(display_text, option)
+                    print(f"【属性面板】添加选项: display_text='{display_text}', option='{option}'")
             else:
                 # 默认选项
                 widget.addItems(["选项1", "选项2"])
 
             # 设置当前选中项（根据实际值）
-            if value is not None:
+            if value is not None and str(value).strip():
+                print(f"【属性面板】设置当前值: '{value}'")
                 # 查找匹配的值
                 current_index = widget.findData(value)
+                print(f"【属性面板】findData结果: index={current_index}")
                 if current_index >= 0:
                     widget.setCurrentIndex(current_index)
+                    print(f"【属性面板】已设置当前索引: {current_index}")
                 else:
                     # 如果找不到精确匹配，尝试字符串比较
+                    print(f"【属性面板】使用setCurrentText: '{str(value)}'")
                     widget.setCurrentText(str(value))
+            else:
+                print(f"【属性面板】值为空，不设置当前选中项")
             widget.setStyleSheet(
                 """
                 QComboBox {
@@ -496,6 +509,27 @@ class ParameterWidgetFactory:
             """
             )
 
+        elif param_type == ParameterType.DATA_CONTENT:
+            # 导入数据内容选择器
+            from ui.data_content_selector import DataContentSelector
+            
+            widget = DataContentSelector()
+            if value is not None:
+                widget.set_text(str(value))
+            
+            # 设置可用模块数据
+            available_modules = kwargs.get("available_modules", {})
+            if available_modules:
+                widget.set_available_modules(available_modules)
+
+        elif param_type == ParameterType.EXTRACTION_RULE:
+            # 导入数据提取规则控件
+            from ui.widgets.extraction_rule_widget import ExtractionRuleWidget
+            
+            widget = ExtractionRuleWidget()
+            if value is not None:
+                widget.set_rule(value)
+
         # 设置提示信息
         if "tooltip" in kwargs:
             label.setToolTip(kwargs["tooltip"])
@@ -522,9 +556,30 @@ class PropertyPanelWidget(QWidget):
         self._current_tool: Optional[ToolBase] = None
         self._parameter_widgets: Dict[str, QWidget] = {}
         self._current_image = None
+        self._available_modules: Dict[str, Dict[str, Any]] = {}  # 可用模块数据
 
         # 初始化UI
         self._init_ui()
+    
+    def set_available_modules(self, modules: Dict[str, Dict[str, Any]]):
+        """设置可用模块数据
+        
+        Args:
+            modules: {模块名: {字段名: 值}}
+        """
+        self._available_modules = modules
+        self._logger.info(f"设置可用模块数据: {list(modules.keys())}, 控件数量: {len(self._parameter_widgets)}")
+        
+        # 更新已创建的数据内容选择器控件
+        updated_count = 0
+        for param_name, widget in self._parameter_widgets.items():
+            if hasattr(widget, 'set_available_modules'):
+                widget.set_available_modules(modules)
+                self._logger.debug(f"更新控件 {param_name} 的可用模块数据")
+                updated_count += 1
+        
+        if updated_count > 0:
+            self._logger.info(f"已更新 {updated_count} 个数据内容选择器控件")
 
     def _init_ui(self):
         """初始化UI组件"""
@@ -720,7 +775,7 @@ class PropertyPanelWidget(QWidget):
 
         # 清空现有属性
         self._clear_properties()
-        self._parameter_widgets.clear()
+        self._parameter_widgets.clear()  # 清空控件引用
 
         # 隐藏空状态
         self.empty_label.hide()
@@ -839,15 +894,25 @@ class PropertyPanelWidget(QWidget):
                     param_value, param_type
                 )
 
+                # 准备创建编辑器的参数
+                widget_kwargs = {
+                    "label": display_name,
+                    "param_name": param_name,
+                    "tooltip": description,
+                    "options": options,
+                    "option_labels": option_labels,
+                }
+                
+                # 如果是数据内容选择器类型，传递可用模块数据
+                if qt_param_type == ParameterType.DATA_CONTENT:
+                    widget_kwargs["available_modules"] = self._available_modules
+                    self._logger.debug(f"创建数据内容选择器，可用模块: {list(self._available_modules.keys())}")
+
                 # 创建编辑器
                 label, editor = ParameterWidgetFactory.create_parameter_widget(
                     qt_param_type,
                     param_value,
-                    label=display_name,
-                    param_name=param_name,
-                    tooltip=description,
-                    options=options,
-                    option_labels=option_labels,
+                    **widget_kwargs
                 )
 
                 # 设置标签样式
@@ -973,6 +1038,10 @@ class PropertyPanelWidget(QWidget):
                 return ParameterType.ROI_LINE
             elif param_type_lower == "roi_circle":
                 return ParameterType.ROI_CIRCLE
+            elif param_type_lower == "data_content":
+                return ParameterType.DATA_CONTENT
+            elif param_type_lower == "extraction_rule":
+                return ParameterType.EXTRACTION_RULE
 
         # 根据值类型猜测
         if isinstance(value, bool):
@@ -1026,8 +1095,13 @@ class PropertyPanelWidget(QWidget):
                 partial(self._on_checkbox_changed, param_name)
             )
         elif isinstance(widget, QComboBox):
-            widget.currentTextChanged.connect(
-                partial(self._on_parameter_changed, param_name)
+            # 使用lambda获取当前选中的userData而不是显示文本
+            widget.currentIndexChanged.connect(
+                lambda index, w=widget, p=param_name: self._on_combobox_changed(p, w)
+            )
+            # 备用信号：当用户手动选择时触发
+            widget.activated.connect(
+                lambda index, w=widget, p=param_name: self._on_combobox_activated(p, w)
             )
         elif isinstance(widget, FilePathSelector):
             # 文件路径选择器连接信号
@@ -1043,10 +1117,64 @@ class PropertyPanelWidget(QWidget):
             widget.roi_clicked.connect(
                 partial(self._on_roi_select_clicked, param_name)
             )
+        else:
+            # 检查是否是 DataContentSelector（使用 duck typing）
+            if hasattr(widget, 'data_selected') and hasattr(widget, 'text_edit'):
+                # 数据内容选择器连接信号
+                widget.data_selected.connect(
+                    partial(self._on_parameter_changed, param_name)
+                )
+                # 同时连接文本框的 textChanged 信号作为备用
+                widget.text_edit.textChanged.connect(
+                    partial(self._on_parameter_changed, param_name)
+                )
+                self._logger.info(f"【属性面板】已连接 DataContentSelector 信号: {param_name}")
+            
+            # 检查是否是 ExtractionRuleWidget（使用 duck typing）
+            elif hasattr(widget, 'rule_changed') and hasattr(widget, 'get_rule_dict'):
+                # 数据提取规则控件连接信号
+                widget.rule_changed.connect(
+                    partial(self._on_parameter_changed, param_name)
+                )
+                self._logger.info(f"【属性面板】已连接 ExtractionRuleWidget 信号: {param_name}")
 
     def _on_checkbox_changed(self, param_name: str, state: int):
         """复选框状态变更处理"""
         self._on_parameter_changed(param_name, bool(state))
+
+    def _on_combobox_changed(self, param_name: str, combobox: QComboBox):
+        """下拉框选项变更处理（currentIndexChanged信号）
+        
+        Args:
+            param_name: 参数名称
+            combobox: QComboBox控件
+        """
+        # 获取当前选中的userData（实际值）而不是显示文本
+        current_data = combobox.currentData()
+        current_text = combobox.currentText()
+        current_index = combobox.currentIndex()
+        self._logger.info(f"【属性面板】下拉框变更(currentIndexChanged): {param_name}, index={current_index}, currentText='{current_text}', currentData='{current_data}'")
+        
+        # 使用userData作为参数值（如果存在），否则使用显示文本
+        value = current_data if current_data is not None else current_text
+        self._on_parameter_changed(param_name, value)
+    
+    def _on_combobox_activated(self, param_name: str, combobox: QComboBox):
+        """下拉框选项激活处理（activated信号）- 当用户手动选择时触发
+        
+        Args:
+            param_name: 参数名称
+            combobox: QComboBox控件
+        """
+        # 获取当前选中的userData（实际值）而不是显示文本
+        current_data = combobox.currentData()
+        current_text = combobox.currentText()
+        current_index = combobox.currentIndex()
+        self._logger.info(f"【属性面板】下拉框激活(activated): {param_name}, index={current_index}, currentText='{current_text}', currentData='{current_data}'")
+        
+        # 使用userData作为参数值（如果存在），否则使用显示文本
+        value = current_data if current_data is not None else current_text
+        self._on_parameter_changed(param_name, value)
 
     def _on_parameter_changed(self, param_name: str, value: Any):
         """参数变更事件
@@ -1056,8 +1184,18 @@ class PropertyPanelWidget(QWidget):
             value: 新的参数值
         """
         if self._current_tool:
-            self._logger.debug(f"参数变更: {param_name} = {value}")
+            self._logger.info(f"【属性面板】参数变更: {param_name} = '{value}' (类型: {type(value).__name__})")
+            
+            # 记录变更前的值
+            old_value = self._current_tool.get_param(param_name, "<未设置>")
+            self._logger.info(f"【属性面板】参数旧值: {param_name} = '{old_value}'")
+            
+            # 设置新值
             self._current_tool.set_param(param_name, value)
+            
+            # 验证新值是否已保存
+            saved_value = self._current_tool.get_param(param_name, "<未设置>")
+            self._logger.info(f"【属性面板】参数新值验证: {param_name} = '{saved_value}'")
 
             # 调用initialize方法应用参数变更
             if hasattr(self._current_tool, "initialize") and callable(

@@ -125,6 +125,14 @@ class EnhancedResultDockWidget(QDockWidget):
         """设置可用模块"""
         self.enhanced_panel.set_available_modules(modules)
 
+    def remove_result_by_tool_name(self, tool_name: str):
+        """根据工具名称移除结果
+        
+        Args:
+            tool_name: 工具名称
+        """
+        self.enhanced_panel.remove_result_by_tool_name(tool_name)
+
 
 if __name__ == "__main__":
     import sys
