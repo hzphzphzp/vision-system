@@ -50,6 +50,8 @@ __all__ = [
     'QRCodeReader',
     'CPUDetector',
     'CalibrationTool',
+    'GeometricTransformTool',
+    'ImageSaverTool',
     # 通信工具
     'SendData',
     'ReceiveData',

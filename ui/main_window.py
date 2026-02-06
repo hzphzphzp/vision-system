@@ -1321,17 +1321,14 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._logger = logging.getLogger("MainWindow")
 
-        # 初始化方案
-        self.solution = Solution("新方案")
+        # 初始化方案（不自动创建默认方案，等待用户手动创建或加载）
+        self.solution = None
+        self.current_procedure = None
 
         # 初始化文件管理器
         self.file_manager = SolutionFileManager()
         self.code_generator = CodeGenerator()
         self.doc_generator = DocumentationGenerator()
-
-        # 初始化流程
-        self.current_procedure = Procedure("流程1")
-        self.solution.add_procedure(self.current_procedure)
 
         # 初始化相机管理器
         self.camera_manager = CameraManager()
@@ -1427,7 +1424,7 @@ class MainWindow(QMainWindow):
 
         # 项目浏览器内容
         self.project_dock = ProjectBrowserDockWidget(self)
-        self.project_dock.set_solution(self.solution)
+        # 初始时solution为None，等有方案时再设置
         project_layout.addWidget(self.project_dock)
 
         left_tab_widget.addTab(project_widget, "项目")
@@ -2067,11 +2064,11 @@ class MainWindow(QMainWindow):
         status_bar.addWidget(separator2)
 
         # 流程状态标签
-        self.procedure_status = QLabel("📋 流程: 新方案 - 流程1")
+        self.procedure_status = QLabel("📋 流程: 未加载")
         self.procedure_status.setStyleSheet(
             """
             QLabel {
-                color: #4caf50;
+                color: #9e9e9e;
                 min-width: 200px;
             }
         """
@@ -2543,6 +2540,10 @@ class MainWindow(QMainWindow):
 
     def _run_procedure_sync(self):
         """同步运行当前流程（用于获取数据）"""
+        if not self.solution or not self.solution.procedures:
+            self._logger.warning("没有可执行的流程")
+            return
+
         self._logger.info("同步运行流程以获取ROI选择所需的图像数据...")
 
         # 保存UI状态
@@ -2832,6 +2833,9 @@ class MainWindow(QMainWindow):
 
         try:
             target_tool = None
+
+            if not self.solution or not self.solution.procedures:
+                return
 
             for procedure in self.solution.procedures:
                 if procedure is None:
@@ -3576,11 +3580,11 @@ class MainWindow(QMainWindow):
             self.connection_items.clear()
 
             # 先从Solution中移除流程
-            if item_object in self.solution.procedures:
+            if self.solution and item_object in self.solution.procedures:
                 self.solution.procedures.remove(item_object)
 
             # 更新当前流程
-            if self.solution.procedures:
+            if self.solution and self.solution.procedures:
                 self.current_procedure = self.solution.procedures[0]
                 # 切换到新的流程（触发流程选择事件）
                 self._on_project_item_selected(
@@ -3720,7 +3724,8 @@ class MainWindow(QMainWindow):
     # 文件操作
     def new_solution(self):
         """新建方案"""
-        self.solution.clear()
+        # 创建新方案
+        self.solution = Solution("新方案")
         self.algorithm_scene.clear()
         self.tool_items.clear()
 
@@ -3740,6 +3745,21 @@ class MainWindow(QMainWindow):
 
             # 获取当前流程中的相机工具
             camera_tools = []
+            if not self.solution or not self.solution.procedures:
+                # 如果没有方案，创建临时实例
+                from tools.camera_parameter_setting import (
+                    CameraParameterSettingTool,
+                )
+
+                tool = CameraParameterSettingTool("camera_settings")
+                result = tool.show_parameter_dialog(self)
+
+                if result == 1:  # QDialog.Accepted
+                    self.update_status("相机参数设置已应用")
+                else:
+                    self.update_status("相机参数设置已取消")
+                return
+
             for procedure in self.solution.procedures:
                 for tool in procedure.tools:
                     if isinstance(tool, CameraSource):
@@ -3825,6 +3845,9 @@ class MainWindow(QMainWindow):
 
     def save_solution(self):
         """保存方案"""
+        if not self.solution:
+            QMessageBox.warning(self, "警告", "没有可保存的方案")
+            return
         if self.solution.solution_path:
             self.solution.save()
             self.update_status(
@@ -3835,6 +3858,9 @@ class MainWindow(QMainWindow):
 
     def save_solution_as(self):
         """另存为方案"""
+        if not self.solution:
+            QMessageBox.warning(self, "警告", "没有可保存的方案")
+            return
         file_path, _ = QFileDialog.getSaveFileName(
             self, "保存方案", "", "方案文件 (*.vmsol);;所有文件 (*.*)"
         )
@@ -3890,8 +3916,9 @@ class MainWindow(QMainWindow):
     # 运行操作
     def run_once(self):
         """单次运行 - 按模块连接关系传递图像数据"""
-        if not self.solution.procedures:
-            self.update_status("没有可执行的流程")
+        if not self.solution or not self.solution.procedures:
+            self.update_status("没有可执行的流程，请先创建或加载方案")
+            QMessageBox.warning(self, "警告", "请先创建新方案或加载已有方案")
             return
 
         if not self.current_procedure:
@@ -4177,8 +4204,9 @@ class MainWindow(QMainWindow):
 
     def run_continuous(self):
         """连续运行 - 按模块连接关系传递图像数据"""
-        if not self.solution.procedures:
-            self.update_status("没有可执行的流程")
+        if not self.solution or not self.solution.procedures:
+            self.update_status("没有可执行的流程，请先创建或加载方案")
+            QMessageBox.warning(self, "警告", "请先创建新方案或加载已有方案")
             return
 
         if not self.current_procedure:

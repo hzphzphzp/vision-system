@@ -292,6 +292,7 @@ class ToolBase(ABC):
         self._is_running = False
         self._last_error: Optional[str] = None
         self._execution_time = 0.0
+        self._position: Optional[Dict[str, float]] = None  # 工具在算法编辑器中的位置
 
         # 获取日志器
         self._logger = logging.getLogger(
@@ -341,6 +342,20 @@ class ToolBase(ABC):
     def is_enabled(self, value: bool):
         """设置启用状态"""
         self._is_enabled = value
+
+    @property
+    def position(self) -> Optional[Dict[str, float]]:
+        """获取工具在算法编辑器中的位置"""
+        return self._position
+
+    @position.setter
+    def position(self, value: Optional[Dict[str, float]]):
+        """设置工具在算法编辑器中的位置
+        
+        Args:
+            value: 位置字典，格式为 {"x": float, "y": float}
+        """
+        self._position = value
 
     @property
     def is_running(self) -> bool:
@@ -1197,6 +1212,7 @@ class ToolBase(ABC):
             "params": self._params.copy(),
             "input_ports": [p.name for p in self.input_ports],
             "output_ports": [p.name for p in self.output_ports],
+            "position": self._position,
         }
 
     def __repr__(self) -> str:

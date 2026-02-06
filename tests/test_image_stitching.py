@@ -23,7 +23,7 @@ sys.path.insert(
 )
 
 from data.image_data import ImageData
-from tools.image_stitching import ImageStitchingTool
+from tools.vision.image_stitching import ImageStitchingTool
 
 
 class TestImageStitching(unittest.TestCase):

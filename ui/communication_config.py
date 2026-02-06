@@ -71,13 +71,18 @@ class ProtocolConnection:
 
 
 class ConnectionStorage:
-    """连接存储类（简化版，不使用文件）"""
+    """连接存储类 - 支持文件持久化"""
 
     def __init__(self):
         self._connections: Dict[str, Dict] = {}
+        # 配置文件路径
+        self._config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config")
+        self._config_file = os.path.join(self._config_dir, "communication_config.json")
+        # 确保配置目录存在
+        os.makedirs(self._config_dir, exist_ok=True)
 
     def save_connections(self, connections: List[ProtocolConnection]) -> bool:
-        """保存连接配置到内存"""
+        """保存连接配置到内存和文件"""
         try:
             for conn in connections:
                 self._connections[conn.id] = {
@@ -85,17 +90,47 @@ class ConnectionStorage:
                     "name": conn.name,
                     "protocol_type": conn.protocol_type,
                     "config": conn.config,
-                    "is_connected": conn.is_connected,
-                    "status": conn.status,
+                    "is_connected": False,  # 保存时不保存连接状态
+                    "status": "未连接",  # 重置状态
                 }
+            # 同时保存到文件
+            self._save_to_file()
             return True
         except Exception as e:
             logger.error(f"保存连接失败: {e}")
             return False
 
     def load_connections(self) -> List[Dict]:
-        """从内存加载连接配置"""
+        """从内存加载连接配置，如果内存为空则从文件加载"""
+        if not self._connections:
+            self._load_from_file()
         return list(self._connections.values())
+
+    def _save_to_file(self) -> bool:
+        """保存配置到文件"""
+        try:
+            with open(self._config_file, 'w', encoding='utf-8') as f:
+                json.dump(self._connections, f, ensure_ascii=False, indent=2)
+            logger.info(f"通讯配置已保存到文件: {self._config_file}")
+            return True
+        except Exception as e:
+            logger.error(f"保存配置到文件失败: {e}")
+            return False
+
+    def _load_from_file(self) -> bool:
+        """从文件加载配置"""
+        try:
+            if os.path.exists(self._config_file):
+                with open(self._config_file, 'r', encoding='utf-8') as f:
+                    self._connections = json.load(f)
+                logger.info(f"已从文件加载通讯配置: {self._config_file}")
+                return True
+            else:
+                logger.info("通讯配置文件不存在，使用空配置")
+                return False
+        except Exception as e:
+            logger.error(f"从文件加载配置失败: {e}")
+            return False
 
 
 class ConnectionValidator:
@@ -220,6 +255,26 @@ class ConnectionManager:
         self._status_callback: Optional[Callable] = None
         self._storage = ConnectionStorage()
         self._pending_workers: Dict[str, ProtocolCreateWorker] = {}
+        # 从存储加载已有配置
+        self._load_connections_from_storage()
+
+    def _load_connections_from_storage(self):
+        """从存储加载连接配置"""
+        try:
+            stored_connections = self._storage.load_connections()
+            for conn_data in stored_connections:
+                connection = ProtocolConnection(
+                    id=conn_data["id"],
+                    name=conn_data["name"],
+                    protocol_type=conn_data["protocol_type"],
+                    config=conn_data["config"],
+                    is_connected=False,  # 加载时重置为未连接
+                    status="未连接",
+                )
+                self._connections[connection.id] = connection
+            logger.info(f"[ConnectionManager] 从存储加载了 {len(stored_connections)} 个连接配置")
+        except Exception as e:
+            logger.error(f"[ConnectionManager] 从存储加载连接配置失败: {e}")
 
     def set_status_callback(self, callback: Callable):
         """设置状态回调"""
@@ -643,6 +698,9 @@ class CommunicationConfigWidget(QWidget):
         self.setLayout(layout)
 
         self.connection_table.itemSelectionChanged.connect(self.on_selection_changed)
+
+        # 初始加载已有连接
+        self.refresh_connections()
 
     def add_connection(self):
         """添加连接"""

@@ -49,7 +49,6 @@ class ImageSource(ImageSourceToolBase):
             param_type="image_file_path",
             description="本地图片文件路径",
         )
-        self.set_param("auto_rotate", False, description="是否自动旋转90度")
 
     def _run_impl(self):
         """执行图像采集"""

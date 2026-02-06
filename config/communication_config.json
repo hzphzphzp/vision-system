@@ -1,0 +1,13 @@
+{
+  "conn_1770368657": {
+    "id": "conn_1770368657",
+    "name": "TCP客户端_1",
+    "protocol_type": "TCP客户端",
+    "config": {
+      "host": "127.0.0.1",
+      "port": 8080
+    },
+    "is_connected": false,
+    "status": "未连接"
+  }
+}

@@ -17,7 +17,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
 # 添加项目路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(
+    0,
+    os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ),
+)
 
 import cv2
 import numpy as np
@@ -115,6 +120,24 @@ class ImageStitchingTool(ToolBase):
             "min_value": 1,
             "max_value": 16,
         },
+        "performance_mode": {
+            "name": "性能模式",
+            "param_type": "enum",
+            "default": "balanced",
+            "description": "选择算法性能与质量的平衡模式",
+            "options": ["fast", "balanced", "quality"],
+            "option_labels": {
+                "fast": "快速模式 (速度优先)",
+                "balanced": "平衡模式 (推荐)",
+                "quality": "高质量模式 (质量优先)",
+            },
+        },
+        "fast_mode": {
+            "name": "快速预处理",
+            "param_type": "boolean",
+            "default": True,
+            "description": "启用快速预处理模式，减少图像预处理时间",
+        },
     }
 
     def __init__(self, name: str = None):
@@ -133,16 +156,18 @@ class ImageStitchingTool(ToolBase):
         # 设置OpenCV的随机种子
         cv2.setRNGSeed(42)
 
-        # 算法参数
+        # 算法参数（优化版）
         self._params = {
-            "feature_detector": "SIFT",  # 特征点检测器类型: SIFT, SURF, ORB, AKAZE
-            "matcher_type": "FLANN",  # 匹配器类型: FLANN, BFM
-            "min_match_count": 10,  # 最小匹配点数
-            "ransac_reproj_threshold": 4.0,  # RANSAC重投影阈值
-            "blend_method": "multi_band",  # 融合方法: multi_band, feather, none
-            "blend_strength": 5,  # 融合强度
-            "parallel_processing": False,  # 禁用并行处理，确保结果一致
-            "max_workers": 4,  # 并行处理的最大线程数
+            "feature_detector": "ORB",  # 默认使用ORB（比SIFT快10倍）
+            "matcher_type": "BFM",  # 使用BFM（更稳定，crossCheck=True）
+            "min_match_count": 8,  # 降低最小匹配点数要求
+            "ransac_reproj_threshold": 3.0,  # 更严格的RANSAC阈值
+            "blend_method": "feather",  # 使用羽化融合（比multi_band快）
+            "blend_strength": 3,  # 降低融合强度
+            "parallel_processing": False,  # 禁用并行处理
+            "max_workers": 2,  # 减少线程数
+            "performance_mode": "balanced",  # 性能模式: fast, balanced, quality
+            "fast_mode": True,  # 启用快速预处理模式
         }
 
         # 从PARAM_DEFINITIONS加载默认参数
@@ -165,88 +190,118 @@ class ImageStitchingTool(ToolBase):
 
     def _create_feature_detector(self):
         """
-        创建特征点检测器
+        创建特征点检测器（优化版）
 
         Returns:
             特征点检测器实例
         """
-        detector_type = self._params["feature_detector"]
+        detector_type = self._params.get("feature_detector", "ORB")
+
+        # 根据性能模式调整特征点数量
+        performance_mode = self._params.get("performance_mode", "balanced")
+        if performance_mode == "fast":
+            nfeatures = 800  # 快速模式：大幅减少特征点
+            nlevels = 4
+            fast_threshold = 25
+        elif performance_mode == "balanced":
+            nfeatures = 1500  # 平衡模式
+            nlevels = 6
+            fast_threshold = 20
+        else:  # quality
+            nfeatures = 3000  # 高质量模式
+            nlevels = 8
+            fast_threshold = 15
 
         if detector_type == "SIFT":
-            # 配置更多特征点和更精细的参数
             return cv2.SIFT_create(
-                nfeatures=20000,  # 大幅增加特征点数量
-                contrastThreshold=0.001,  # 更低阈值，检测更多弱特征
-                edgeThreshold=5,  # 更低阈值，保留更多边缘特征
+                nfeatures=nfeatures,
+                nOctaveLayers=3,
+                contrastThreshold=0.04,
+                edgeThreshold=10,
+                sigma=1.6,
             )
         elif detector_type == "SURF":
-            # 需要OpenCV contrib模块
             try:
                 return cv2.xfeatures2d.SURF_create()
             except Exception:
-                return cv2.SIFT_create()
+                return cv2.SIFT_create(nfeatures=nfeatures)
         elif detector_type == "ORB":
-            # 配置更多特征点和更精细的参数
             return cv2.ORB_create(
-                nfeatures=25000,  # 大幅增加特征点数量
-                scaleFactor=1.02,  # 更精细的尺度金字塔
+                nfeatures=nfeatures,
+                scaleFactor=1.2,  # 增大尺度因子，减少层数
+                nlevels=nlevels,
                 patchSize=31,
-                edgeThreshold=10,  # 更低阈值，保留更多边缘特征
+                edgeThreshold=31,
                 firstLevel=0,
                 WTA_K=2,
                 scoreType=cv2.ORB_HARRIS_SCORE,
-                nlevels=8,
-                fastThreshold=20,
+                fastThreshold=fast_threshold,
             )
         elif detector_type == "AKAZE":
-            return cv2.AKAZE_create()
+            return cv2.AKAZE_create(
+                descriptor_type=cv2.AKAZE_DESCRIPTOR_MLDB,
+                descriptor_size=0,
+                descriptor_channels=3,
+                threshold=0.001,
+                nOctaves=4,
+                nOctaveLayers=4,
+                diffusivity=cv2.KAZE_DIFF_PM_G2,
+            )
         else:
-            return cv2.SIFT_create()
+            return cv2.ORB_create(nfeatures=nfeatures)
 
     def _create_matcher(self):
         """
-        创建特征点匹配器
+        创建特征点匹配器（优化版）
 
         Returns:
             特征点匹配器实例
         """
-        matcher_type = self._params["matcher_type"]
-        detector_type = self._params["feature_detector"]
+        matcher_type = self._params.get(
+            "matcher_type", "BFM"
+        )  # 默认使用BFM（更稳定）
+        detector_type = self._params.get("feature_detector", "ORB")
+
+        # 根据性能模式调整匹配参数
+        performance_mode = self._params.get("performance_mode", "balanced")
+        if performance_mode == "fast":
+            checks = 32  # 快速模式：减少检查次数
+        elif performance_mode == "balanced":
+            checks = 50
+        else:  # quality
+            checks = 100
 
         if matcher_type == "FLANN":
             try:
                 if detector_type in ["SIFT", "SURF"]:
                     FLANN_INDEX_KDTREE = 1
                     index_params = dict(
-                        algorithm=FLANN_INDEX_KDTREE, trees=8
-                    )  # 增加树数量，提升匹配精度
-                    search_params = dict(
-                        checks=100
-                    )  # 增加检查次数，提升匹配精度
+                        algorithm=FLANN_INDEX_KDTREE,
+                        trees=4,  # 减少树数量，提升速度
+                    )
+                    search_params = dict(checks=checks)
                     return cv2.FlannBasedMatcher(index_params, search_params)
                 else:
-                    # ORB and AKAZE use different FLANN parameters
+                    # ORB and AKAZE use LSH (Locality Sensitive Hashing)
                     index_params = dict(
                         algorithm=6,
                         table_number=6,
                         key_size=12,
                         multi_probe_level=1,
                     )
-                    search_params = dict(
-                        checks=100
-                    )  # 增加检查次数，提升匹配精度
+                    search_params = dict(checks=checks)
                     return cv2.FlannBasedMatcher(index_params, search_params)
             except Exception:
                 # 降级到BFM匹配器
                 if detector_type in ["SIFT", "SURF"]:
-                    return cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
+                    return cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
                 else:
-                    return cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
-        else:  # BFM
+                    return cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        else:  # BFM - 使用crossCheck=True提高匹配质量
             if detector_type in ["SIFT", "SURF"]:
-                return cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
+                return cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
             else:
-                return cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+                return cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
 
     def _load_persistent_params(self):
         """
@@ -359,9 +414,97 @@ class ImageStitchingTool(ToolBase):
         """
         return self._calculate_input_hash(input_data)
 
+    def _detect_stitch_direction(self, img1: np.ndarray, img2: np.ndarray) -> str:
+        """
+        检测拼接方向 - 水平或垂直
+        
+        Returns:
+            "horizontal" 或 "vertical"
+        """
+        gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+        gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+        
+        # 使用ORB检测特征点
+        orb = cv2.ORB_create(nfeatures=500)
+        kp1, des1 = orb.detectAndCompute(gray1, None)
+        kp2, des2 = orb.detectAndCompute(gray2, None)
+        
+        if des1 is None or des2 is None or len(kp1) < 10 or len(kp2) < 10:
+            return "horizontal"  # 默认水平
+        
+        # 匹配特征点
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        matches = bf.match(des1, des2)
+        
+        if len(matches) < 8:
+            return "horizontal"  # 默认水平
+        
+        # 分析匹配点的位置差异
+        h_diffs = []
+        v_diffs = []
+        
+        for match in matches:
+            pt1 = kp1[match.queryIdx].pt
+            pt2 = kp2[match.trainIdx].pt
+            h_diffs.append(abs(pt1[0] - pt2[0]))
+            v_diffs.append(abs(pt1[1] - pt2[1]))
+        
+        avg_h = np.mean(h_diffs)
+        avg_v = np.mean(v_diffs)
+        
+        # 如果垂直位移明显大于水平位移，说明是垂直拼接
+        direction = "vertical" if avg_v > avg_h * 1.2 else "horizontal"
+        self._logger.info(f"检测到拼接方向: {direction} (水平差异:{avg_h:.1f}, 垂直差异:{avg_v:.1f})")
+        return direction
+
+    def _stitch_with_opencv(self, images: List[ImageData]) -> ImageData:
+        """
+        使用OpenCV内置Stitcher进行拼接（智能方向检测）
+        
+        Args:
+            images: 输入图像列表
+            
+        Returns:
+            拼接后的图像
+        """
+        cv_images = [img.data for img in images]
+        
+        # 检测拼接方向
+        if len(cv_images) >= 2:
+            direction = self._detect_stitch_direction(cv_images[0], cv_images[1])
+        else:
+            direction = "horizontal"
+        
+        # 创建Stitcher
+        stitcher = cv2.Stitcher.create(cv2.Stitcher_PANORAMA)
+        
+        if direction == "vertical":
+            # 垂直拼接：旋转90度后水平拼接，再转回来
+            self._logger.info("使用垂直拼接模式（自动旋转）")
+            rotated_images = [cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE) for img in cv_images]
+            status, stitched_rot = stitcher.stitch(rotated_images)
+            
+            if status == cv2.Stitcher_OK:
+                stitched = cv2.rotate(stitched_rot, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                self._logger.info("垂直拼接成功")
+                return ImageData(data=stitched)
+        else:
+            # 水平拼接：直接使用
+            status, stitched = stitcher.stitch(cv_images)
+            
+            if status == cv2.Stitcher_OK:
+                self._logger.info("水平拼接成功")
+                return ImageData(data=stitched)
+        
+        raise Exception(f"OpenCV Stitcher失败，状态码: {status}")
+
     def process(self, input_data: List[ImageData]) -> ResultData:
         """
         处理输入图像，执行拼接融合
+        
+        策略：
+        1. 首先尝试使用OpenCV内置Stitcher（质量最好，无黑线）
+        2. 如果失败，回退到自定义算法
 
         Args:
             input_data: 输入图像列表
@@ -371,6 +514,16 @@ class ImageStitchingTool(ToolBase):
         """
         result = ResultData()
         result.tool_name = self._name
+
+        # 修复：每次处理前清空输入数据列表，防止累积
+        # 注意：必须在处理开始前清空，因为上游工具可能已经通过 set_input 累积了数据
+        if hasattr(self, '_input_data_list'):
+            if len(self._input_data_list) > len(input_data):
+                self._logger.debug(f"清空累积的输入数据列表 (之前长度: {len(self._input_data_list)}, 实际使用: {len(input_data)})")
+                self._input_data_list.clear()
+                # 重新添加传入的数据
+                for img in input_data:
+                    self._input_data_list.append(img)
 
         try:
             if len(input_data) < 2:
@@ -395,48 +548,44 @@ class ImageStitchingTool(ToolBase):
                 f"开始处理 {len(input_data)} 张图像: {input_sizes}"
             )
 
-            # 建立图像尺寸一致性验证机制
-            self._logger.info("步骤0: 图像尺寸一致性验证")
-            # 检查所有图像尺寸是否一致
-            widths = [img.width for img in input_data]
-            heights = [img.height for img in input_data]
+            # 策略1：首先尝试OpenCV内置Stitcher（质量最好）
+            stitched_image = None
+            try:
+                self._logger.info("步骤1: 尝试OpenCV内置Stitcher")
+                stitched_image = self._stitch_with_opencv(input_data)
+                self._logger.info("OpenCV Stitcher成功")
+            except Exception as e:
+                self._logger.warning(f"OpenCV Stitcher失败: {e}，回退到自定义算法")
+                
+                # 策略2：使用自定义算法作为备选
+                self._logger.info("步骤1: 使用自定义算法")
+                
+                # 特征点检测与匹配
+                features = self._detect_and_match_features(input_data)
+                
+                # 检查特征点检测结果
+                valid_features = [
+                    f for f in features if f["descriptors"] is not None
+                ]
+                self._logger.info(
+                    f"特征点检测完成: 有效特征={len(valid_features)}/{len(features)}"
+                )
 
-            # 计算平均尺寸
-            avg_width = int(sum(widths) / len(widths))
-            avg_height = int(sum(heights) / len(heights))
-            self._logger.info(
-                f"图像尺寸统计: 宽度范围={min(widths)}-{max(widths)}, 高度范围={min(heights)}-{max(heights)}, 平均尺寸={avg_width}x{avg_height}"
-            )
+                # 图像排序
+                sorted_indices = self._sort_images(features)
+                sorted_images = [input_data[i] for i in sorted_indices]
+                sorted_features = [features[i] for i in sorted_indices]
+                self._logger.info(f"图像排序完成: 排序顺序={sorted_indices}")
 
-            # 1. 特征点检测与匹配
-            self._logger.info("步骤1: 特征点检测与匹配")
-            features = self._detect_and_match_features(input_data)
+                # 图像拼接
+                stitched_image = self._stitch_images(
+                    sorted_images, sorted_features
+                )
 
-            # 检查特征点检测结果
-            valid_features = [
-                f for f in features if f["descriptors"] is not None
-            ]
-            self._logger.info(
-                f"特征点检测完成: 有效特征={len(valid_features)}/{len(features)}"
-            )
-
-            # 2. 图像排序
-            self._logger.info("步骤2: 图像排序")
-            sorted_indices = self._sort_images(features)
-            sorted_images = [input_data[i] for i in sorted_indices]
-            sorted_features = [features[i] for i in sorted_indices]
-            self._logger.info(f"图像排序完成: 排序顺序={sorted_indices}")
-
-            # 3. 图像拼接
-            self._logger.info("步骤3: 图像拼接")
-            stitched_image = self._stitch_images(
-                sorted_images, sorted_features
-            )
-
-            # 4. 记录处理时间
+            # 记录处理时间
             processing_time = time.time() - start_time
 
-            # 5. 构建结果
+            # 构建结果
             if (
                 stitched_image.is_valid
                 and stitched_image.width > 0
@@ -476,10 +625,16 @@ class ImageStitchingTool(ToolBase):
             # 发生异常时，返回第一张图像
             if input_data:
                 result.set_image("stitched_image", input_data[0].copy())
+                result.set_value("processing_time", processing_time)
                 result.set_value("input_images_count", len(input_data))
                 result.set_value("stitched_width", input_data[0].width)
                 result.set_value("stitched_height", input_data[0].height)
             self._logger.error(f"拼接过程发生异常: {e}", exc_info=True)
+
+        # 修复：处理完成后清空输入数据列表，防止累积
+        if hasattr(self, '_input_data_list'):
+            self._logger.debug(f"清空输入数据列表 (之前长度: {len(self._input_data_list)})")
+            self._input_data_list.clear()
 
         return result
 
@@ -525,7 +680,9 @@ class ImageStitchingTool(ToolBase):
         # 添加新条目
         self._result_cache[cache_key] = result
         self._cache_access_order.append(cache_key)
-        self._logger.info(f"结果已缓存: {cache_key} (当前缓存大小: {len(self._result_cache)}/{self._max_cache_size})")
+        self._logger.info(
+            f"结果已缓存: {cache_key} (当前缓存大小: {len(self._result_cache)}/{self._max_cache_size})"
+        )
 
     def _get_from_cache(self, cache_key: str) -> Optional[ResultData]:
         """
@@ -601,25 +758,36 @@ class ImageStitchingTool(ToolBase):
 
         return features
 
-    def preprocess_image(self, image: np.ndarray) -> np.ndarray:
-        """图像预处理：增强对比度，适配高对比度图案"""
+    def preprocess_image(
+        self, image: np.ndarray, fast_mode: bool = True
+    ) -> np.ndarray:
+        """图像预处理：增强对比度，适配高对比度图案（优化版）
+
+        Args:
+            image: 输入图像
+            fast_mode: 是否使用快速模式（减少预处理步骤）
+        """
         if len(image.shape) == 3:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:
             gray = image.copy()
 
-        # 自适应直方图均衡化（比普通均衡化更自然）
-        clahe = cv2.createCLAHE(
-            clipLimit=1.5, tileGridSize=(16, 16)
-        )  # 降低clipLimit，避免过曝
-        gray = clahe.apply(gray)
+        if fast_mode:
+            # 快速模式：只进行必要的高斯模糊降噪
+            gray = cv2.GaussianBlur(gray, (3, 3), 0.5)
+        else:
+            # 高质量模式：完整预处理
+            # 自适应直方图均衡化
+            clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
+            gray = clahe.apply(gray)
 
-        # 形态学闭运算，填充小缝隙，统一纹理
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        gray = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
+            # 形态学闭运算
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            gray = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
 
-        # 轻微高斯模糊，降低噪声
-        gray = cv2.GaussianBlur(gray, (5, 5), 1)  # 增大模糊核，提升降噪效果
+            # 高斯模糊
+            gray = cv2.GaussianBlur(gray, (5, 5), 1)
+
         return gray
 
     def _detect_features(self, image: ImageData) -> Dict[str, Any]:
@@ -668,7 +836,7 @@ class ImageStitchingTool(ToolBase):
         self, features1: Dict[str, Any], features2: Dict[str, Any]
     ) -> List:
         """
-        匹配两张图像的特征点（双向匹配，顺序不敏感版）
+        匹配两张图像的特征点（改进版：使用比率测试和双向验证）
 
         Args:
             features1: 第一张图像的特征点
@@ -688,16 +856,9 @@ class ImageStitchingTool(ToolBase):
         desc1 = features1["descriptors"]
         desc2 = features2["descriptors"]
 
-        if len(desc1) < 20 or len(desc2) < 20:
+        if len(desc1) < 10 or len(desc2) < 10:
             self._logger.error("特征描述符数量不足")
             return []
-
-        # 检查描述符形状
-        desc1_shape = desc1.shape if hasattr(desc1, "shape") else "未知"
-        desc2_shape = desc2.shape if hasattr(desc2, "shape") else "未知"
-        self._logger.debug(
-            f"描述符形状: 图像1={desc1_shape}, 图像2={desc2_shape}"
-        )
 
         try:
             # 确保描述符数据类型正确
@@ -706,99 +867,64 @@ class ImageStitchingTool(ToolBase):
             if desc2.dtype != np.float32:
                 desc2 = desc2.astype(np.float32)
 
-            # 方向1：features1 → features2
-            matches1 = self._matcher.knnMatch(desc1, desc2, k=2)
-
-            # 应用比率测试筛选良好匹配点
-            good_matches1 = []
-            for m, n in matches1:
-                if m.distance < 0.8 * n.distance:
-                    good_matches1.append(m)
-
-            # 方向2：features2 → features1
-            matches2 = self._matcher.knnMatch(desc2, desc1, k=2)
-
-            # 应用比率测试筛选良好匹配点
-            good_matches2 = []
-            for m, n in matches2:
-                if m.distance < 0.8 * n.distance:
-                    good_matches2.append(m)
-
-            # 寻找互匹配点（双向一致性检查）
-            mutual_matches = []
-            # 创建匹配点映射
-            match_map1 = {m.queryIdx: m.trainIdx for m in good_matches1}
-
-            for m2 in good_matches2:
-                # m2.queryIdx是desc2中的索引，m2.trainIdx是desc1中的索引
-                # 检查是否存在互匹配
-                if (
-                    m2.trainIdx in match_map1
-                    and match_map1[m2.trainIdx] == m2.queryIdx
-                ):
-                    # 找到互匹配点，添加到结果中
-                    # 使用方向1的匹配点格式
-                    for m1 in good_matches1:
-                        if (
-                            m1.queryIdx == m2.trainIdx
-                            and m1.trainIdx == m2.queryIdx
-                        ):
-                            mutual_matches.append(m1)
-                            break
-
-            # 确定最终匹配结果
-            final_matches = []
-
-            # 优先使用互匹配点
-            if len(mutual_matches) >= 10:
-                final_matches = mutual_matches
-                self._logger.info(
-                    f"使用互匹配点: {len(final_matches)}个匹配点"
-                )
+            # 创建新的匹配器（不使用crossCheck，以便使用比率测试）
+            detector_type = self._params.get("feature_detector", "ORB")
+            if detector_type in ["SIFT", "SURF"]:
+                matcher = cv2.BFMatcher(cv2.NORM_L2)
             else:
-                # 互匹配点不足，选择匹配点更多且质量更好的方向
-                # 计算平均距离，评估匹配质量
-                avg_dist1 = (
-                    np.mean([m.distance for m in good_matches1])
-                    if good_matches1
-                    else float("inf")
-                )
-                avg_dist2 = (
-                    np.mean([m.distance for m in good_matches2])
-                    if good_matches2
-                    else float("inf")
-                )
+                matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
 
-                # 综合考虑匹配点数量和质量
-                score1 = len(good_matches1) / (avg_dist1 + 1e-6)  # 避免除零
-                score2 = len(good_matches2) / (avg_dist2 + 1e-6)
+            # 使用kNN匹配，k=2
+            matches = matcher.knnMatch(desc1, desc2, k=2)
 
-                if score1 >= score2:
-                    final_matches = good_matches1
-                    self._logger.info(
-                        f"使用方向1匹配点: {len(final_matches)}个匹配点, 平均距离={avg_dist1:.2f}"
-                    )
-                else:
-                    # 转换方向2的匹配点格式为方向1的格式
-                    class Match:
-                        def __init__(self, queryIdx, trainIdx, distance):
-                            self.queryIdx = queryIdx
-                            self.trainIdx = trainIdx
-                            self.distance = distance
+            # 应用Lowe's比率测试筛选优质匹配
+            good_matches = []
+            ratio_threshold = 0.75  # Lowe's比率阈值
 
-                    final_matches = []
-                    for m in good_matches2:
-                        final_matches.append(
-                            Match(m.trainIdx, m.queryIdx, m.distance)
-                        )
-                    self._logger.info(
-                        f"使用方向2匹配点: {len(final_matches)}个匹配点, 平均距离={avg_dist2:.2f}"
-                    )
+            for match_pair in matches:
+                if len(match_pair) == 2:
+                    m, n = match_pair
+                    # 如果最佳匹配的距离远小于次佳匹配，则认为是优质匹配
+                    if m.distance < ratio_threshold * n.distance:
+                        good_matches.append(m)
 
             self._logger.info(
-                f"匹配结果: 方向1良好匹配数={len(good_matches1)}, 方向2良好匹配数={len(good_matches2)}, 互匹配数={len(mutual_matches)}, 最终匹配数={len(final_matches)}"
+                f"匹配结果: kNN匹配数={len(matches)}, "
+                f"比率测试后={len(good_matches)}"
             )
-            return final_matches
+
+            # 如果没有足够的匹配点，尝试使用BFM with crossCheck作为后备
+            if len(good_matches) < 10:
+                self._logger.info(
+                    "比率测试后匹配点不足，尝试使用crossCheck匹配"
+                )
+                if detector_type in ["SIFT", "SURF"]:
+                    matcher_cc = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
+                else:
+                    matcher_cc = cv2.BFMatcher(
+                        cv2.NORM_HAMMING, crossCheck=True
+                    )
+
+                matches_cc = matcher_cc.match(desc1, desc2)
+
+                # 按距离排序并选择前80%
+                matches_cc = sorted(matches_cc, key=lambda x: x.distance)
+                max_matches = min(int(len(matches_cc) * 0.8), 100)
+                good_matches = matches_cc[:max_matches]
+
+                self._logger.info(
+                    f"crossCheck匹配结果: 原始={len(matches_cc)}, "
+                    f"筛选后={len(good_matches)}"
+                )
+
+            # 最终筛选：按距离排序并限制最大数量
+            if len(good_matches) > 100:
+                good_matches = sorted(good_matches, key=lambda x: x.distance)[
+                    :100
+                ]
+
+            return good_matches
+
         except Exception as e:
             self._logger.error(f"特征点匹配失败: {e}")
             return []
@@ -1065,14 +1191,15 @@ class ImageStitchingTool(ToolBase):
                 continue
 
             try:
-                # 提取匹配点（改进版：添加几何一致性检查）
-                # 首先按匹配质量排序
+                # 提取匹配点（改进版：使用比率测试后的优质匹配点）
                 sorted_matches = sorted(matches, key=lambda m: m.distance)
-                
-                # 选择质量最好的匹配点（前80%）
-                good_match_count = max(int(len(sorted_matches) * 0.8), min_match_count)
+
+                # 选择质量最好的匹配点（前60%）
+                good_match_count = max(
+                    int(len(sorted_matches) * 0.6), min_match_count
+                )
                 best_matches = sorted_matches[:good_match_count]
-                
+
                 src_pts = np.float32(
                     [
                         features[i - 1]["keypoints"][m.queryIdx].pt
@@ -1085,23 +1212,76 @@ class ImageStitchingTool(ToolBase):
                         for m in best_matches
                     ]
                 )
-                
-                self._logger.info(f"使用 {len(best_matches)} 个高质量匹配点进行单应性计算")
 
-                # 双向单应性矩阵计算（改进版：更严格的RANSAC参数）
-                self._logger.info("计算双向单应性矩阵（改进版）")
+                self._logger.info(
+                    f"使用 {len(best_matches)} 个高质量匹配点进行单应性计算"
+                )
 
-                # 改进的RANSAC参数
-                ransac_threshold = self._params.get("ransac_reproj_threshold", 3.0)  # 降低阈值，更严格
-                
+                # 几何一致性预检查：计算匹配点之间的相对距离
+                if len(src_pts) >= 4:
+                    # 计算源图像中匹配点之间的距离矩阵
+                    src_dist_matrix = np.sqrt(
+                        np.sum(
+                            (src_pts[:, np.newaxis] - src_pts[np.newaxis, :])
+                            ** 2,
+                            axis=2,
+                        )
+                    )
+                    # 计算目标图像中匹配点之间的距离矩阵
+                    dst_dist_matrix = np.sqrt(
+                        np.sum(
+                            (dst_pts[:, np.newaxis] - dst_pts[np.newaxis, :])
+                            ** 2,
+                            axis=2,
+                        )
+                    )
+
+                    # 检查距离一致性（距离变化应该在合理范围内）
+                    dist_ratio = dst_dist_matrix / (src_dist_matrix + 1e-6)
+                    consistent_mask = (dist_ratio > 0.5) & (dist_ratio < 2.0)
+                    consistent_ratio = np.mean(consistent_mask)
+
+                    self._logger.info(
+                        f"几何一致性预检查: 一致率={consistent_ratio:.2%}"
+                    )
+
+                    # 如果一致率过低，可能是严重的误匹配，需要更严格的筛选
+                    if consistent_ratio < 0.3:
+                        self._logger.warning(
+                            "几何一致性过低，尝试更严格的筛选"
+                        )
+                        # 只使用前30%的高质量匹配点
+                        strict_count = max(int(len(sorted_matches) * 0.3), 8)
+                        best_matches = sorted_matches[:strict_count]
+                        src_pts = np.float32(
+                            [
+                                features[i - 1]["keypoints"][m.queryIdx].pt
+                                for m in best_matches
+                            ]
+                        )
+                        dst_pts = np.float32(
+                            [
+                                current_features["keypoints"][m.trainIdx].pt
+                                for m in best_matches
+                            ]
+                        )
+
+                # 双向单应性矩阵计算（使用更严格的RANSAC参数）
+                self._logger.info("计算双向单应性矩阵（鲁棒性增强版）")
+
+                # 使用更严格的RANSAC参数
+                ransac_threshold = self._params.get(
+                    "ransac_reproj_threshold", 2.0
+                )
+
                 # 方向1：第二张图向第一张图对齐 (dst_pts → src_pts)
                 M1, mask1 = cv2.findHomography(
                     dst_pts,
                     src_pts,
                     cv2.RANSAC,
                     ransac_threshold,
-                    maxIters=5000,  # 增加迭代次数
-                    confidence=0.995,  # 提高置信度
+                    maxIters=10000,
+                    confidence=0.999,
                 )
 
                 # 方向2：第一张图向第二张图对齐 (src_pts → dst_pts)
@@ -1110,42 +1290,75 @@ class ImageStitchingTool(ToolBase):
                     dst_pts,
                     cv2.RANSAC,
                     ransac_threshold,
-                    maxIters=5000,
-                    confidence=0.995,
+                    maxIters=10000,
+                    confidence=0.999,
                 )
 
                 # 评估两个方向的单应性矩阵
                 best_M = None
                 best_inliers = 0
+                best_mask = None
                 direction = 1
 
-                if M1 is not None:
-                    inliers1 = mask1.sum()
+                if M1 is not None and mask1 is not None:
+                    inliers1 = np.sum(mask1)
+                    inlier_ratio1 = inliers1 / len(mask1)
                     self._logger.info(
-                        f"方向1（第二张图向第一张图对齐）内点数量={inliers1}/{len(matches)}"
+                        f"方向1内点: {inliers1}/{len(mask1)} ({inlier_ratio1:.1%})"
                     )
-                    best_M = M1
-                    best_inliers = inliers1
 
-                if M2 is not None:
-                    inliers2 = mask2.sum()
+                    # 只有内点率足够高时才使用
+                    if inlier_ratio1 > 0.5:
+                        best_M = M1
+                        best_inliers = inliers1
+                        best_mask = mask1
+
+                if M2 is not None and mask2 is not None:
+                    inliers2 = np.sum(mask2)
+                    inlier_ratio2 = inliers2 / len(mask2)
                     self._logger.info(
-                        f"方向2（第一张图向第二张图对齐）内点数量={inliers2}/{len(matches)}"
+                        f"方向2内点: {inliers2}/{len(mask2)} ({inlier_ratio2:.1%})"
                     )
-                    if inliers2 > best_inliers:
+
+                    if inlier_ratio2 > 0.5 and inliers2 > best_inliers:
                         best_M = M2
                         best_inliers = inliers2
+                        best_mask = mask2
                         direction = 2
-                    elif inliers2 == best_inliers and direction == 1:
-                        # 内点数量相同时，优先选择方向1，确保一致性
-                        self._logger.info("内点数量相同，优先选择方向1")
 
                 if best_M is None:
-                    self._logger.warning("单应性矩阵计算失败")
+                    self._logger.warning("单应性矩阵计算失败或质量过低")
                     continue
 
+                # 使用筛选后的内点重新计算单应性矩阵（更精确）
+                if best_mask is not None:
+                    inlier_src_pts = src_pts[best_mask.ravel() == 1]
+                    inlier_dst_pts = dst_pts[best_mask.ravel() == 1]
+
+                    if len(inlier_src_pts) >= 4:
+                        # 使用所有内点重新计算，使用最小二乘法
+                        refined_M, _ = cv2.findHomography(
+                            (
+                                inlier_dst_pts
+                                if direction == 1
+                                else inlier_src_pts
+                            ),
+                            (
+                                inlier_src_pts
+                                if direction == 1
+                                else inlier_dst_pts
+                            ),
+                            method=0,  # 最小二乘法
+                        )
+
+                        if refined_M is not None:
+                            best_M = refined_M
+                            self._logger.info(
+                                f"使用{len(inlier_src_pts)}个内点优化了单应性矩阵"
+                            )
+
                 self._logger.info(
-                    f"选择最佳方向{direction}，内点数量={best_inliers}/{len(matches)}"
+                    f"选择方向{direction}，内点数量={best_inliers}"
                 )
                 M = best_M
 
@@ -1538,11 +1751,17 @@ class ImageStitchingTool(ToolBase):
         mask2: np.ndarray = None,
     ) -> np.ndarray:
         """
-        无缝融合两张图像（修复重影问题版本）
+        无缝融合两张图像（最终修复重影问题版本）
+
+        核心策略：
+        1. 在重叠区域中心使用单一图像，避免重影
+        2. 只在重叠区域的边缘进行渐进式融合
+        3. 使用陡峭的权重过渡曲线
+        4. 添加曝光补偿减少亮度差异
 
         Args:
-            img1: 第一张图像
-            img2: 第二张图像
+            img1: 第一张图像（基准图像）
+            img2: 第二张图像（待融合图像）
             mask1: 第一张图像的掩码
             mask2: 第二张图像的掩码
 
@@ -1559,7 +1778,7 @@ class ImageStitchingTool(ToolBase):
         # 找到重叠区域
         overlap = cv2.bitwise_and(mask1, mask2)
         overlap_pixels = np.sum(overlap > 0)
-        
+
         if overlap_pixels == 0:
             self._logger.info("无重叠区域，直接拼接")
             result = img1.copy()
@@ -1568,38 +1787,68 @@ class ImageStitchingTool(ToolBase):
 
         self._logger.info(f"重叠区域像素数: {overlap_pixels}")
 
-        # 先均衡重叠区域的亮度/对比度
+        # 第一步：曝光补偿，统一亮度
         img1_balanced, img2_balanced = self._balance_brightness(
             img1, img2, overlap
         )
 
-        # 改进的融合策略：基于距离变换的权重计算
+        # 第二步：创建改进的融合权重图
         # 计算距离变换
         dist1 = cv2.distanceTransform(mask1, cv2.DIST_L2, 5)
         dist2 = cv2.distanceTransform(mask2, cv2.DIST_L2, 5)
 
-        # 只在重叠区域计算权重
-        overlap_mask = (overlap > 0).astype(np.float32)
-        
-        # 计算权重：基于到各自边界的距离
-        # 距离自己边界越近，权重越高
+        # 初始化权重图
         weight1 = np.zeros_like(dist1)
         weight2 = np.zeros_like(dist2)
-        
-        # 在重叠区域内计算权重
+
+        # 找到重叠区域的坐标
         overlap_coords = np.where(overlap > 0)
+
         if len(overlap_coords[0]) > 0:
+            # 获取重叠区域内的距离值
             d1 = dist1[overlap_coords]
             d2 = dist2[overlap_coords]
-            
-            # 使用平滑的权重过渡
-            # 当d1 >> d2时，weight1接近1
-            # 当d2 >> d1时，weight1接近0
-            # 在边界附近平滑过渡
+
+            # 计算总距离
             total_dist = d1 + d2 + 1e-6
-            w1 = d1 / total_dist
-            w2 = d2 / total_dist
-            
+
+            # 核心改进：使用分段权重策略
+            # 在重叠区域中心（d1 ≈ d2）使用单一图像
+            # 只在边缘附近进行快速过渡
+            ratio = d1 / total_dist  # 0到1之间的值
+
+            # 使用非常陡峭的过渡曲线
+            # 设置两个阈值：inner_threshold和outer_threshold
+            inner_threshold = 0.45  # 内部区域阈值
+            outer_threshold = 0.55  # 外部区域阈值
+
+            # 创建权重数组
+            w1 = np.zeros_like(ratio)
+            w2 = np.zeros_like(ratio)
+
+            # 区域1：远离第二张图像边界，主要使用img1
+            region1_mask = ratio <= inner_threshold
+            w1[region1_mask] = 1.0
+            w2[region1_mask] = 0.0
+
+            # 区域2：远离第一张图像边界，主要使用img2
+            region2_mask = ratio >= outer_threshold
+            w1[region2_mask] = 0.0
+            w2[region2_mask] = 1.0
+
+            # 区域3：中间过渡区域，使用陡峭的线性插值
+            transition_mask = (ratio > inner_threshold) & (
+                ratio < outer_threshold
+            )
+            if np.any(transition_mask):
+                # 在过渡区域内进行线性插值
+                t = (ratio[transition_mask] - inner_threshold) / (
+                    outer_threshold - inner_threshold
+                )
+                w1[transition_mask] = 1.0 - t
+                w2[transition_mask] = t
+
+            # 将权重赋值回完整图像
             weight1[overlap_coords] = w1
             weight2[overlap_coords] = w2
 
@@ -1612,12 +1861,12 @@ class ImageStitchingTool(ToolBase):
         weight1[non_overlap2 > 0] = 0.0
         weight2[non_overlap2 > 0] = 1.0
 
-        # 应用高斯模糊平滑权重过渡（但核大小要适中，避免过度模糊）
-        kernel_size = 21  # 减小核大小，避免过度平滑导致重影
+        # 使用较小的核进行高斯模糊，保持边缘清晰
+        kernel_size = 7  # 小核以保持边缘锐利
         if kernel_size % 2 == 0:
             kernel_size += 1
-        weight1 = cv2.GaussianBlur(weight1, (kernel_size, kernel_size), 5)
-        weight2 = cv2.GaussianBlur(weight2, (kernel_size, kernel_size), 5)
+        weight1 = cv2.GaussianBlur(weight1, (kernel_size, kernel_size), 2)
+        weight2 = cv2.GaussianBlur(weight2, (kernel_size, kernel_size), 2)
 
         # 扩展权重图为3通道
         weight1_map_3d = np.stack([weight1] * 3, axis=-1)
@@ -1627,25 +1876,12 @@ class ImageStitchingTool(ToolBase):
         img1_float = img1_balanced.astype(np.float32)
         img2_float = img2_balanced.astype(np.float32)
 
-        # 融合重叠区域
+        # 加权融合
         result = img1_float * weight1_map_3d + img2_float * weight2_map_3d
 
-        # 检查并处理可能的异常值
+        # 裁剪到有效范围
         result = np.clip(result, 0, 255)
-        
-        # 后处理：只在重叠区域轻微模糊，避免全局模糊导致重影
         result_uint8 = result.astype(np.uint8)
-        
-        # 创建重叠区域的膨胀掩码，只在重叠区域附近进行轻微模糊
-        overlap_dilated = cv2.dilate(overlap, np.ones((5, 5), np.uint8), iterations=1)
-        
-        # 轻微模糊整个结果
-        blurred = cv2.GaussianBlur(result_uint8, (3, 3), 0)
-        
-        # 只在重叠区域应用模糊，非重叠区域保持清晰
-        overlap_mask_3d = np.stack([overlap_dilated / 255.0] * 3, axis=-1)
-        result_uint8 = (result_uint8 * (1 - overlap_mask_3d) + 
-                       blurred * overlap_mask_3d).astype(np.uint8)
 
         return result_uint8
 
@@ -1674,6 +1910,13 @@ class ImageStitchingTool(ToolBase):
         self._matcher = self._create_matcher()
 
     def _run_impl(self):
+        """
+        实际执行逻辑
+        """
+        # 修复：运行前立即清空累积数据
+        if hasattr(self, "_input_data_list") and len(self._input_data_list) > 2:
+            self._logger.debug(f"_run_impl: 清空累积的 {len(self._input_data_list)} 张图像")
+            self._input_data_list.clear()
         """
         实际执行逻辑，实现ToolBase的抽象方法
         """
@@ -1708,6 +1951,7 @@ class ImageStitchingTool(ToolBase):
                     self._output_data = stitched_image
                     # 清空输入数据列表，准备接收新数据
                     self._input_data_list.clear()
+                    self._input_count = 0
                     return {"OutputImage": stitched_image}
             else:
                 # 拼接失败，记录错误信息
@@ -1781,23 +2025,38 @@ class ImageStitchingTool(ToolBase):
         # 初始化输入数据列表，用于多图像拼接
         if not hasattr(self, "_input_data_list"):
             self._input_data_list = []
+            self._last_input_time = 0
+            self._input_count = 0  # 记录当前执行周期的输入数量
+
+        # 修复：检查是否是新的执行周期
+        import time
+        current_time = time.time()
+        time_diff = current_time - self._last_input_time if hasattr(self, '_last_input_time') else 999
+        
+        # 条件：超过1秒认为是新周期，清空旧数据
+        if time_diff > 1.0:
+            if len(self._input_data_list) > 0:
+                self._logger.debug(f"新的执行周期，清空 {len(self._input_data_list)} 张旧图像")
+                self._input_data_list.clear()
+            self._input_count = 0
+            
+        self._last_input_time = current_time
 
         # 对于图像拼接，我们需要累积输入数据
-        # 但要确保列表不会无限增长
         if input_data:
             # 添加新的输入数据
             self._input_data_list.append(input_data)
+            self._input_count += 1
 
             # 限制列表长度，只保留最近的N张图像
-            # 根据需求，最大支持9张图像拼接
             max_images = 9
             if len(self._input_data_list) > max_images:
-                # 移除最旧的图像
                 self._input_data_list = self._input_data_list[-max_images:]
+                self._input_count = len(self._input_data_list)
 
             # 记录输入数据信息
-            self._logger.debug(
-                f"添加输入图像 #{len(self._input_data_list)}: {input_data.width}x{input_data.height}"
+            self._logger.info(
+                f"添加输入图像 #{len(self._input_data_list)}: {input_data.width}x{input_data.height}, 当前周期输入数: {self._input_count}"
             )
 
     def get_info(self) -> Dict[str, Any]:

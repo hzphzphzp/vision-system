@@ -120,27 +120,26 @@ class SendDataTool(ToolBase):
         2. 数据内容支持"模块名称.结果字段"格式选择
         3. 不默认保存"all"
         4. 只在参数不存在时才设置默认值，避免覆盖用户设置
+        5. 延迟加载连接列表，避免初始化时卡顿
         """
         self._logger.info(f"【_init_params】开始初始化参数，当前参数: {dict(self._params)}")
-        
-        # 连接选择 - 动态加载可用连接的下拉框
-        available_connections = self._get_available_connections()
-        self._logger.info(f"【_init_params】可用连接: {available_connections}")
         
         # 只在参数不存在或为空时设置默认值
         current_connection = self._params.get("目标连接", "")
         self._logger.info(f"【_init_params】当前目标连接值: '{current_connection}'")
         
+        # 延迟加载：只在需要时获取连接列表
+        # 初始化时设置空列表或默认值，避免卡顿
         if not current_connection:
-            self._logger.info(f"【_init_params】目标连接为空，设置默认值")
+            self._logger.info(f"【_init_params】目标连接为空，设置默认值（延迟加载连接列表）")
             self.set_param("目标连接", "",
                           param_type="enum",
-                          options=available_connections if available_connections else ["暂无可用连接"],
-                          description="选择要发送数据的通讯连接")
+                          options=["点击刷新获取连接列表"],
+                          description="选择要发送数据的通讯连接（点击下拉框刷新）")
         else:
-            # 只更新选项列表，不覆盖值
-            self._logger.info(f"【_init_params】目标连接不为空，只更新选项列表")
-            self._params[f"__options_目标连接"] = available_connections if available_connections else ["暂无可用连接"]
+            # 只更新选项列表，不覆盖值（延迟加载）
+            self._logger.info(f"【_init_params】目标连接不为空，延迟加载选项列表")
+            self._params[f"__options_目标连接"] = ["点击刷新获取连接列表"]
         
         self._logger.info(f"【_init_params】初始化完成，目标连接值: '{self._params.get('目标连接', '')}'")
 
@@ -165,6 +164,33 @@ class SendDataTool(ToolBase):
                           description="发送触发条件")
         if "仅发送变化的数据" not in self._params:
             self.set_param("仅发送变化的数据", False, description="是否只发送变化的数据")
+    
+    def _on_param_changed(self, key: str, old_value: Any, new_value: Any):
+        """参数变更回调
+        
+        当目标连接参数被点击时，刷新连接列表
+        """
+        super()._on_param_changed(key, old_value, new_value)
+        
+        if key == "目标连接":
+            # 检查是否需要刷新连接列表
+            if new_value == "点击刷新获取连接列表" or old_value == "点击刷新获取连接列表":
+                self._logger.info("【_on_param_changed】刷新连接列表")
+                self._refresh_connection_options()
+    
+    def _refresh_connection_options(self):
+        """刷新连接列表选项"""
+        try:
+            available_connections = self._get_available_connections()
+            self._logger.info(f"【_refresh_connection_options】获取到 {len(available_connections)} 个连接")
+            
+            if available_connections:
+                self._params["__options_目标连接"] = available_connections
+            else:
+                self._params["__options_目标连接"] = ["暂无可用连接"]
+        except Exception as e:
+            self._logger.error(f"【_refresh_connection_options】刷新连接列表失败: {e}")
+            self._params["__options_目标连接"] = ["刷新失败，请重试"]
     
     def _update_data_content_options(self):
         """根据上游数据更新数据内容选项"""
@@ -874,19 +900,19 @@ class ReceiveDataTool(ToolBase):
         """初始化参数
         
         只在参数不存在时才设置默认值，避免覆盖用户设置
+        优化：延迟加载连接列表，避免初始化时卡顿
         """
-        # 连接选择（动态加载可用连接）
-        available_connections = self._get_available_connections()
         # 只在参数不存在或为空时设置默认值
         current_connection = self._params.get("连接ID", "")
+        # 延迟加载：初始化时设置提示选项
         if not current_connection:
             self.set_param("连接ID", "",
                           param_type="enum",
-                          options=available_connections if available_connections else ["无可用连接"],
-                          description="选择已有的通讯连接ID")
+                          options=["点击刷新获取连接列表"],
+                          description="选择已有的通讯连接ID（点击下拉框刷新）")
         else:
-            # 只更新选项列表，不覆盖值
-            self._params[f"__options_连接ID"] = available_connections if available_connections else ["无可用连接"]
+            # 只更新选项列表，不覆盖值（延迟加载）
+            self._params[f"__options_连接ID"] = ["点击刷新获取连接列表"]
 
         # 接收配置 - 只在不存在时设置默认值
         if "输出格式" not in self._params:
@@ -906,6 +932,33 @@ class ReceiveDataTool(ToolBase):
             self.set_param("数据提取规则", None,
                           param_type="extraction_rule",
                           description='配置Modbus TCP数据提取规则')
+
+    def _on_param_changed(self, key: str, old_value: Any, new_value: Any):
+        """参数变更回调
+        
+        当连接ID参数被点击时，刷新连接列表
+        """
+        super()._on_param_changed(key, old_value, new_value)
+        
+        if key == "连接ID":
+            # 检查是否需要刷新连接列表
+            if new_value == "点击刷新获取连接列表" or old_value == "点击刷新获取连接列表":
+                self._logger.info("【_on_param_changed】刷新连接列表")
+                self._refresh_connection_options()
+    
+    def _refresh_connection_options(self):
+        """刷新连接列表选项"""
+        try:
+            available_connections = self._get_available_connections()
+            self._logger.info(f"【_refresh_connection_options】获取到 {len(available_connections)} 个连接")
+            
+            if available_connections:
+                self._params["__options_连接ID"] = available_connections
+            else:
+                self._params["__options_连接ID"] = ["暂无可用连接"]
+        except Exception as e:
+            self._logger.error(f"【_refresh_connection_options】刷新连接列表失败: {e}")
+            self._params["__options_连接ID"] = ["刷新失败，请重试"]
 
     def set_param(self, key: str, value: Any, **kwargs):
         """设置参数，特殊处理数据提取规则"""
