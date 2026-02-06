@@ -12,6 +12,7 @@ Author: Vision System Team
 Date: 2026-01-05
 """
 
+import logging
 import os
 import sys
 
@@ -249,9 +250,13 @@ class ToolLibraryWidget(QWidget):
         super().__init__(parent)
         self._tool_items: Dict[str, List[ToolLibraryItem]] = {}
         self._tool_data_list: List[ToolItemData] = []
+        
+        # 初始化日志记录器
+        self._logger = logging.getLogger("ToolLibraryWidget")
 
         # 初始化UI
         self._init_ui()
+        # 加载工具
         self._load_tools()
         self._update_tool_list()
 
@@ -403,7 +408,12 @@ class ToolLibraryWidget(QWidget):
             )
 
     def _load_tools(self):
-        """加载所有工具"""
+        """加载所有工具
+        
+        使用硬编码列表确保工具正常显示。
+        """
+        self._logger.info("开始加载工具列表...")
+        
         self._tool_data_list = [
             ToolItemData(
                 "ImageSource",
@@ -560,14 +570,103 @@ class ToolLibraryWidget(QWidget):
                 "📐",
                 "像素坐标和尺寸转换为物理尺寸，支持手动标定和棋盘格标定",
             ),
+            ToolItemData(
+                "Vision",
+                "几何变换",
+                "几何变换",
+                "🔄",
+                "对图像进行几何变换，支持镜像和旋转操作",
+            ),
+            ToolItemData(
+                "Vision",
+                "图像保存",
+                "图像保存",
+                "💾",
+                "保存图像数据到指定路径，支持通过连线获取上游图像",
+            ),
         ]
-
+        
+        self._logger.info(f"已加载 {len(self._tool_data_list)} 个工具")
+        
         # 按类别分组
         self._tool_items = {}
         for tool_data in self._tool_data_list:
             if tool_data.category not in self._tool_items:
                 self._tool_items[tool_data.category] = []
             self._tool_items[tool_data.category].append(tool_data)
+    
+    def _get_icon_for_category(self, category: str, tool_name: str) -> str:
+        """根据类别和工具名获取图标
+        
+        Args:
+            category: 工具类别
+            tool_name: 工具名称
+            
+        Returns:
+            图标emoji字符
+        """
+        # 特定工具的图标映射
+        icon_map = {
+            # 图像源
+            "图像读取器": "📷",
+            "相机": "📷",
+            # 滤波
+            "方框滤波": "🌀",
+            "均值滤波": "🌀",
+            "高斯滤波": "🌀",
+            "中值滤波": "🌀",
+            "双边滤波": "🌀",
+            "形态学处理": "🌀",
+            "图像缩放": "🌀",
+            # 匹配和查找
+            "灰度匹配": "🎯",
+            "形状匹配": "🎯",
+            "直线查找": "📏",
+            "圆查找": "⭕",
+            # 识别
+            "读码": "📱",
+            "条码识别": "📊",
+            "二维码识别": "🔳",
+            "OCR识别": "📝",
+            "英文OCR": "🔤",
+            # 分析
+            "斑点分析": "⚪",
+            "像素计数": "🔢",
+            "直方图": "📊",
+            "卡尺测量": "📏",
+            # 通信
+            "发送数据": "📤",
+            "接收数据": "📥",
+            # 深度学习
+            "YOLO26-CPU": "🤖",
+            # 图像处理
+            "图像计算": "➕",
+            "图像拼接": "🔄",
+            "几何变换": "🔄",
+            "图像保存": "💾",
+            # 检测
+            "外观检测": "🔍",
+            "表面缺陷检测": "🔬",
+            "标定": "📐",
+        }
+        
+        # 首先检查特定工具名
+        if tool_name in icon_map:
+            return icon_map[tool_name]
+        
+        # 然后根据类别返回默认图标
+        category_icons = {
+            "ImageSource": "📷",
+            "ImageFilter": "🌀",
+            "ImageProcessing": "⚙️",
+            "Vision": "👁️",
+            "Recognition": "📱",
+            "Analysis": "📊",
+            "Communication": "📡",
+            "DeepLearning": "🤖",
+        }
+        
+        return category_icons.get(category, "📦")
 
     def _update_tool_list(self):
         """更新工具列表"""
@@ -640,10 +739,12 @@ class ToolLibraryWidget(QWidget):
 
     def refresh(self):
         """刷新工具库"""
+        self._logger.info("刷新工具库...")
         # 重新加载工具
         self._load_tools()
         # 更新工具列表显示（包含分类树刷新）
         self._update_tool_list()
+        self._logger.info(f"工具库刷新完成，共 {len(self._tool_data_list)} 个工具")
 
 
 class ToolLibraryDockWidget(QDockWidget):

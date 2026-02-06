@@ -191,6 +191,9 @@ import numpy as np
 
 # 导入所有工具模块，确保它们被注册到ToolRegistry
 import tools
+# 显式导入所有工具子模块，确保工具被注册到ToolRegistry
+from tools import vision, communication, analysis
+from tools import image_source, camera_parameter_setting
 from core.procedure import Procedure
 from core.solution import Solution
 from core.solution_file_manager import (
@@ -987,12 +990,16 @@ class GraphicsToolItem(QGraphicsRectItem):
             self.scene().remove_tool(self)
 
     def itemChange(self, change, value):
-        """监听位置变化，更新连线"""
+        """监听位置变化，更新连线和工具位置数据"""
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
             # 位置将要变化
             self._logger.debug(
                 f"[TOOL] 工具 '{self.tool.tool_name}' 位置将要变化: ({value.x():.1f}, {value.y():.1f})"
             )
+
+            # 更新工具的位置数据（用于方案保存）
+            if hasattr(self.tool, 'position'):
+                self.tool.position = {"x": value.x(), "y": value.y()}
 
             # 更新所有相关的连线
             self._update_related_connections()
@@ -1848,10 +1855,11 @@ class MainWindow(QMainWindow):
             # 刷新属性面板
             if (
                 hasattr(self, "property_dock")
-                and self.property_dock.current_tool
+                and hasattr(self.property_dock, '_current_tool')
+                and self.property_dock._current_tool
             ):
                 self.property_dock.update_properties(
-                    self.property_dock.current_tool
+                    self.property_dock._current_tool
                 )
 
             # 刷新结果面板
@@ -3104,6 +3112,9 @@ class MainWindow(QMainWindow):
             tool.initialize(params)
             self._logger.info(f"工具已初始化: {new_tool_name}")
 
+        # 设置工具位置
+        tool.position = {"x": position.x(), "y": position.y()}
+        
         # 创建图形项
         self._logger.debug(f"创建图形项，位置: {position}")
         graphics_item = GraphicsToolItem(tool, position)
@@ -3130,6 +3141,54 @@ class MainWindow(QMainWindow):
 
         self.update_status(f"已添加工具: {new_tool_name}")
         self._logger.info(f"工具创建完成: {new_tool_name}")
+
+    def _add_tool_to_scene(self, tool, x: float, y: float):
+        """将已存在的工具添加到场景中（用于方案导入）
+        
+        Args:
+            tool: 工具实例
+            x: X坐标
+            y: Y坐标
+        """
+        from PyQt5.QtCore import QPointF
+        
+        tool_name = tool.name
+        self._logger.info(f"添加工具到场景: {tool_name}，位置: ({x}, {y})")
+        
+        # 查找工具数据
+        tool_data = None
+        if hasattr(tool, 'tool_name'):
+            self._logger.debug(f"查找工具数据: {tool.tool_name}")
+            tool_data = self.tool_library_widget.get_tool_data(tool.tool_name)
+        
+        if tool_data is None:
+            self._logger.error(f"未找到工具数据: {tool_name} (tool_name: {getattr(tool, 'tool_name', 'N/A')})")
+            # 尝试获取所有工具列表
+            all_tools = self.tool_library_widget.get_all_tools()
+            self._logger.debug(f"可用工具: {[t.display_name for t in all_tools]}")
+            return
+        
+        # 确保工具位置已设置
+        tool.position = {"x": x, "y": y}
+        
+        # 调用initialize方法初始化工具（应用默认参数）
+        if hasattr(tool, 'initialize') and callable(tool.initialize):
+            params = tool.get_all_params()
+            success = tool.initialize(params)
+            if success:
+                self._logger.info(f"工具已初始化: {tool_name}")
+            else:
+                self._logger.warning(f"工具初始化失败: {tool_name}")
+        
+        # 创建图形项
+        position = QPointF(x, y)
+        graphics_item = GraphicsToolItem(tool, position)
+        graphics_item.tool_data = tool_data
+        self.algorithm_scene.addItem(graphics_item)
+        
+        # 保存到tool_items
+        self.tool_items[tool_name] = graphics_item
+        self._logger.info(f"工具已添加到场景: {tool_name}")
 
     def _on_port_connection(self, from_port: PortItem, to_port: PortItem):
         """端口连线回调函数
@@ -3721,6 +3780,45 @@ class MainWindow(QMainWindow):
 
         if file_path:
             if self.solution.load(file_path):
+                self._logger.info(f"方案加载成功: {file_path}")
+                
+                # 清空算法编辑器
+                self.algorithm_scene.clear()
+                self.tool_items.clear()
+                self.connection_items.clear()
+                
+                # 重新创建工具图形项和连接
+                for procedure in self.solution.procedures:
+                    self.current_procedure = procedure
+                    self._logger.info(f"加载流程: {procedure.name}，包含 {len(procedure.tools)} 个工具")
+                    # 为每个工具创建图形项
+                    for i, tool in enumerate(procedure.tools):
+                        # 从工具数据中获取保存的位置，如果没有则使用网格布局
+                        position = tool.position
+                        if position and "x" in position and "y" in position:
+                            x = position["x"]
+                            y = position["y"]
+                        else:
+                            # 使用网格布局作为后备
+                            x = 100 + (i % 3) * 250
+                            y = 100 + (i // 3) * 150
+                        self._add_tool_to_scene(tool, x, y)
+
+                    # 恢复连接
+                    for connection in procedure.connections:
+                        from_tool = connection.from_tool
+                        to_tool = connection.to_tool
+                        if from_tool in self.tool_items and to_tool in self.tool_items:
+                            from_item = self.tool_items[from_tool]
+                            to_item = self.tool_items[to_tool]
+                            # 创建连接线
+                            from_port = from_item.output_port
+                            to_port = to_item.input_port
+                            if from_port and to_port:
+                                line = ConnectionLine(from_port, to_port)
+                                self.algorithm_scene.addItem(line)
+                                self.connection_items[(from_tool, to_tool)] = line
+                
                 # 更新项目浏览器
                 self.project_dock.set_solution(self.solution)
                 self.update_status(f"已打开: {Path(file_path).name}")
@@ -4293,6 +4391,8 @@ class MainWindow(QMainWindow):
                 # 导入成功，加载到当前方案
                 self.solution = imported_solution
                 self.current_procedure = None
+                
+                self._logger.info(f"方案导入成功，包含 {len(self.solution.procedures)} 个流程")
 
                 # 清空算法编辑器
                 self.algorithm_scene.clear()
@@ -4302,17 +4402,24 @@ class MainWindow(QMainWindow):
                 # 重新创建工具图形项和连接
                 for procedure in self.solution.procedures:
                     self.current_procedure = procedure
+                    self._logger.info(f"加载流程: {procedure.name}，包含 {len(procedure.tools)} 个工具")
                     # 为每个工具创建图形项
                     for i, tool in enumerate(procedure.tools):
-                        # 计算位置（网格布局）
-                        x = 100 + (i % 3) * 250
-                        y = 100 + (i // 3) * 150
+                        # 从工具数据中获取保存的位置，如果没有则使用网格布局
+                        position = tool.position
+                        if position and "x" in position and "y" in position:
+                            x = position["x"]
+                            y = position["y"]
+                        else:
+                            # 使用网格布局作为后备
+                            x = 100 + (i % 3) * 250
+                            y = 100 + (i // 3) * 150
                         self._add_tool_to_scene(tool, x, y)
 
                     # 恢复连接
                     for connection in procedure.connections:
-                        from_tool = connection.get("from")
-                        to_tool = connection.get("to")
+                        from_tool = connection.from_tool
+                        to_tool = connection.to_tool
                         if from_tool in self.tool_items and to_tool in self.tool_items:
                             from_item = self.tool_items[from_tool]
                             to_item = self.tool_items[to_tool]

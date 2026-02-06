@@ -216,7 +216,10 @@ class CPUDetector(VisionAlgorithmToolBase):
 
     def _run_impl(self) -> Dict[str, Any]:
         """执行目标检测"""
+        self._logger.info(f"YOLO26开始执行，检测器状态: {self._detector is not None}")
+        
         if not self._detector:
+            self._logger.error("检测器未初始化")
             height, width = self._input_data.data.shape[:2]
             output_image_data = ImageData(
                 self._input_data.data, width, height, 3
@@ -227,7 +230,9 @@ class CPUDetector(VisionAlgorithmToolBase):
                 "detection_count": 0,
             }
 
+        self._logger.info(f"检测器模型加载状态: {self._detector.is_loaded}")
         if not self._detector.is_loaded:
+            self._logger.error("模型未加载")
             height, width = self._input_data.data.shape[:2]
             output_image_data = ImageData(
                 self._input_data.data, width, height, 3
@@ -239,7 +244,10 @@ class CPUDetector(VisionAlgorithmToolBase):
             }
 
         if not self._input_data or not self._input_data.is_valid:
+            self._logger.error("输入图像无效")
             return {"error": "输入图像无效"}
+        
+        self._logger.info(f"输入图像有效: {self._input_data.width}x{self._input_data.height}")
 
         # 执行检测
         result = self._detector.detect(self._input_data.data)
@@ -295,6 +303,8 @@ class CPUDetector(VisionAlgorithmToolBase):
         # 创建输出图像数据
         height, width = output_image.shape[:2]
         output_image_data = ImageData(output_image, width, height, 3)
+        
+        self._logger.info(f"YOLO26检测完成: {len(filtered_detections)}个目标, 输出图像: {width}x{height}")
 
         return {
             "OutputImage": output_image_data,
