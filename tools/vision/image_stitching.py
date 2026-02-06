@@ -1065,31 +1065,43 @@ class ImageStitchingTool(ToolBase):
                 continue
 
             try:
-                # 提取匹配点
+                # 提取匹配点（改进版：添加几何一致性检查）
+                # 首先按匹配质量排序
+                sorted_matches = sorted(matches, key=lambda m: m.distance)
+                
+                # 选择质量最好的匹配点（前80%）
+                good_match_count = max(int(len(sorted_matches) * 0.8), min_match_count)
+                best_matches = sorted_matches[:good_match_count]
+                
                 src_pts = np.float32(
                     [
                         features[i - 1]["keypoints"][m.queryIdx].pt
-                        for m in matches
+                        for m in best_matches
                     ]
                 )
                 dst_pts = np.float32(
                     [
                         current_features["keypoints"][m.trainIdx].pt
-                        for m in matches
+                        for m in best_matches
                     ]
                 )
+                
+                self._logger.info(f"使用 {len(best_matches)} 个高质量匹配点进行单应性计算")
 
-                # 双向单应性矩阵计算
-                self._logger.info("计算双向单应性矩阵")
+                # 双向单应性矩阵计算（改进版：更严格的RANSAC参数）
+                self._logger.info("计算双向单应性矩阵（改进版）")
 
+                # 改进的RANSAC参数
+                ransac_threshold = self._params.get("ransac_reproj_threshold", 3.0)  # 降低阈值，更严格
+                
                 # 方向1：第二张图向第一张图对齐 (dst_pts → src_pts)
                 M1, mask1 = cv2.findHomography(
                     dst_pts,
                     src_pts,
                     cv2.RANSAC,
-                    5.0,
-                    maxIters=2000,
-                    confidence=0.99,
+                    ransac_threshold,
+                    maxIters=5000,  # 增加迭代次数
+                    confidence=0.995,  # 提高置信度
                 )
 
                 # 方向2：第一张图向第二张图对齐 (src_pts → dst_pts)
@@ -1097,9 +1109,9 @@ class ImageStitchingTool(ToolBase):
                     src_pts,
                     dst_pts,
                     cv2.RANSAC,
-                    5.0,
-                    maxIters=2000,
-                    confidence=0.99,
+                    ransac_threshold,
+                    maxIters=5000,
+                    confidence=0.995,
                 )
 
                 # 评估两个方向的单应性矩阵
@@ -1526,7 +1538,7 @@ class ImageStitchingTool(ToolBase):
         mask2: np.ndarray = None,
     ) -> np.ndarray:
         """
-        无缝融合两张图像（基于参考代码的优化版本）
+        无缝融合两张图像（修复重影问题版本）
 
         Args:
             img1: 第一张图像
@@ -1546,31 +1558,52 @@ class ImageStitchingTool(ToolBase):
 
         # 找到重叠区域
         overlap = cv2.bitwise_and(mask1, mask2)
-        if np.sum(overlap) == 0:
+        overlap_pixels = np.sum(overlap > 0)
+        
+        if overlap_pixels == 0:
             self._logger.info("无重叠区域，直接拼接")
             result = img1.copy()
             result[mask2 > 0] = img2[mask2 > 0]
             return result
+
+        self._logger.info(f"重叠区域像素数: {overlap_pixels}")
 
         # 先均衡重叠区域的亮度/对比度
         img1_balanced, img2_balanced = self._balance_brightness(
             img1, img2, overlap
         )
 
-        # 优化重叠区域检测：从轮廓改为距离变换，生成软掩码
-        # 计算mask1到mask2的距离，生成线性渐变权重
+        # 改进的融合策略：基于距离变换的权重计算
+        # 计算距离变换
         dist1 = cv2.distanceTransform(mask1, cv2.DIST_L2, 5)
         dist2 = cv2.distanceTransform(mask2, cv2.DIST_L2, 5)
 
-        # 归一化距离到0-1
-        dist1 = cv2.normalize(dist1, None, 0, 1.0, cv2.NORM_MINMAX)
-        dist2 = cv2.normalize(dist2, None, 0, 1.0, cv2.NORM_MINMAX)
+        # 只在重叠区域计算权重
+        overlap_mask = (overlap > 0).astype(np.float32)
+        
+        # 计算权重：基于到各自边界的距离
+        # 距离自己边界越近，权重越高
+        weight1 = np.zeros_like(dist1)
+        weight2 = np.zeros_like(dist2)
+        
+        # 在重叠区域内计算权重
+        overlap_coords = np.where(overlap > 0)
+        if len(overlap_coords[0]) > 0:
+            d1 = dist1[overlap_coords]
+            d2 = dist2[overlap_coords]
+            
+            # 使用平滑的权重过渡
+            # 当d1 >> d2时，weight1接近1
+            # 当d2 >> d1时，weight1接近0
+            # 在边界附近平滑过渡
+            total_dist = d1 + d2 + 1e-6
+            w1 = d1 / total_dist
+            w2 = d2 / total_dist
+            
+            weight1[overlap_coords] = w1
+            weight2[overlap_coords] = w2
 
-        # 生成平滑的权重图（基于距离的线性渐变，比sigmoid更自然）
-        weight1 = dist1 / (dist1 + dist2 + 1e-6)  # 避免除0
-        weight2 = dist2 / (dist1 + dist2 + 1e-6)
-
-        # 只在重叠区域应用权重，非重叠区域权重为1/0
+        # 非重叠区域：完全保留各自的图像
         non_overlap1 = cv2.bitwise_and(mask1, cv2.bitwise_not(mask2))
         non_overlap2 = cv2.bitwise_and(mask2, cv2.bitwise_not(mask1))
 
@@ -1579,12 +1612,12 @@ class ImageStitchingTool(ToolBase):
         weight1[non_overlap2 > 0] = 0.0
         weight2[non_overlap2 > 0] = 1.0
 
-        # 增大高斯模糊核，提升过渡平滑度
-        kernel_size = 41  # 固定大核，更适合高对比度图案
+        # 应用高斯模糊平滑权重过渡（但核大小要适中，避免过度模糊）
+        kernel_size = 21  # 减小核大小，避免过度平滑导致重影
         if kernel_size % 2 == 0:
             kernel_size += 1
-        weight1 = cv2.GaussianBlur(weight1, (kernel_size, kernel_size), 10)
-        weight2 = cv2.GaussianBlur(weight2, (kernel_size, kernel_size), 10)
+        weight1 = cv2.GaussianBlur(weight1, (kernel_size, kernel_size), 5)
+        weight2 = cv2.GaussianBlur(weight2, (kernel_size, kernel_size), 5)
 
         # 扩展权重图为3通道
         weight1_map_3d = np.stack([weight1] * 3, axis=-1)
@@ -1597,9 +1630,22 @@ class ImageStitchingTool(ToolBase):
         # 融合重叠区域
         result = img1_float * weight1_map_3d + img2_float * weight2_map_3d
 
-        # 后处理：全局轻微模糊，消除最后残留的细微边界
+        # 检查并处理可能的异常值
+        result = np.clip(result, 0, 255)
+        
+        # 后处理：只在重叠区域轻微模糊，避免全局模糊导致重影
         result_uint8 = result.astype(np.uint8)
-        result_uint8 = cv2.GaussianBlur(result_uint8, (3, 3), 0)
+        
+        # 创建重叠区域的膨胀掩码，只在重叠区域附近进行轻微模糊
+        overlap_dilated = cv2.dilate(overlap, np.ones((5, 5), np.uint8), iterations=1)
+        
+        # 轻微模糊整个结果
+        blurred = cv2.GaussianBlur(result_uint8, (3, 3), 0)
+        
+        # 只在重叠区域应用模糊，非重叠区域保持清晰
+        overlap_mask_3d = np.stack([overlap_dilated / 255.0] * 3, axis=-1)
+        result_uint8 = (result_uint8 * (1 - overlap_mask_3d) + 
+                       blurred * overlap_mask_3d).astype(np.uint8)
 
         return result_uint8
 

@@ -32,6 +32,7 @@ from core.communication.dynamic_io import (
     PointF, Circle, RectBox, Posture, Fixture
 )
 from core.tool_base import ToolBase, ToolParameter, ToolRegistry
+from core.parameter_serializer import ParameterSerializer
 
 
 def _get_comm_manager():
@@ -906,6 +907,37 @@ class ReceiveDataTool(ToolBase):
                           param_type="extraction_rule",
                           description='配置Modbus TCP数据提取规则')
 
+    def set_param(self, key: str, value: Any, **kwargs):
+        """设置参数，特殊处理数据提取规则"""
+        # 特殊处理数据提取规则参数
+        if key == "数据提取规则":
+            if value is not None and not isinstance(value, (dict, type(None))):
+                # 如果是DataExtractionRule对象，转换为字典
+                try:
+                    from tools.communication.data_extraction_rules import DataExtractionRule
+                    if isinstance(value, DataExtractionRule):
+                        value = value.to_dict()
+                except ImportError:
+                    pass
+        
+        super().set_param(key, value, **kwargs)
+    
+    def get_param(self, key: str, default=None):
+        """获取参数，特殊处理数据提取规则"""
+        value = super().get_param(key, default)
+        
+        if key == "数据提取规则" and value is not None:
+            if isinstance(value, dict):
+                # 从字典还原为DataExtractionRule对象
+                try:
+                    from tools.communication.data_extraction_rules import DataExtractionRule
+                    return DataExtractionRule.from_dict(value)
+                except Exception as e:
+                    self._logger.warning(f"还原数据提取规则失败: {e}")
+                    return default
+        
+        return value
+    
     def _check_input(self) -> bool:
         """检查输入数据有效性
         

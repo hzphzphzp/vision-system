@@ -774,3 +774,146 @@ def _update_display(self):
    with QSignalBlocker(self.combo_box):
        self.combo_box.setCurrentIndex(index)
    ```
+
+### 20. Image Stitching Ghosting/Double Image Bug
+
+**Problem**: Image stitching algorithm produces output with ghosting/double image artifacts
+
+**Symptom**: 
+- Output image shows overlapping/duplicate content
+- Objects appear semi-transparent with offset
+- Visual "ghost" effect where same content appears multiple times
+
+**Example**: 
+When stitching images of a box, the output shows the box content overlapped with offset, creating a ghosting effect.
+
+**Root Causes**:
+1. **Feature Point Mismatch**: Incorrect matching of feature points between images
+2. **Homography Matrix Error**: Wrong transformation matrix calculation
+3. **Blending Issue**: Improper alpha blending in overlapping regions
+4. **Alignment Error**: Images not properly aligned before blending
+5. **Parallax Effect**: Significant depth differences causing misalignment
+
+**Potential Solutions**:
+
+```python
+# 1. Improve Feature Detection and Matching
+def _detect_and_match_features(self, img1, img2):
+    """改进的特征检测和匹配"""
+    # Use ORB or SIFT for better feature detection
+    orb = cv2.ORB_create(nfeatures=5000)
+    kp1, des1 = orb.detectAndCompute(img1, None)
+    kp2, des2 = orb.detectAndCompute(img2, None)
+    
+    # Use BFMatcher with Hamming distance for ORB
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches = bf.match(des1, des2)
+    
+    # Sort matches by distance
+    matches = sorted(matches, key=lambda x: x.distance)
+    
+    # Filter good matches (keep top 30%)
+    good_matches = matches[:int(len(matches) * 0.3)]
+    
+    return kp1, kp2, good_matches
+
+# 2. RANSAC for Robust Homography Estimation
+def _compute_homography_ransac(self, src_pts, dst_pts):
+    """使用RANSAC计算单应性矩阵"""
+    H, mask = cv2.findHomography(
+        src_pts, dst_pts, 
+        cv2.RANSAC, 
+        ransacReprojThreshold=5.0
+    )
+    
+    # Check if enough inliers
+    inliers = np.sum(mask)
+    if inliers < 4:
+        raise ValueError(f"Not enough inliers: {inliers}")
+    
+    return H, mask
+
+# 3. Multi-band Blending for Seamless Result
+def _multi_band_blending(self, img1, img2, H):
+    """多频段融合减少重影"""
+    # Create masks for blending
+    mask1 = np.ones_like(img1[:, :, 0], dtype=np.float32)
+    mask2 = np.ones_like(img2[:, :, 0], dtype=np.float32)
+    
+    # Warp images and masks
+    h, w = img1.shape[:2]
+    result_size = (w * 2, h)
+    
+    warped_img2 = cv2.warpPerspective(img2, H, result_size)
+    warped_mask2 = cv2.warpPerspective(mask2, H, result_size)
+    
+    # Create weight maps based on distance to edges
+    weight1 = cv2.distanceTransform((mask1 > 0).astype(np.uint8), cv2.DIST_L2, 5)
+    weight2 = cv2.distanceTransform((warped_mask2 > 0).astype(np.uint8), cv2.DIST_L2, 5)
+    
+    # Normalize weights
+    weight_sum = weight1 + weight2 + 1e-6
+    weight1 = weight1 / weight_sum
+    weight2 = weight2 / weight_sum
+    
+    # Blend images
+    result = np.zeros_like(warped_img2, dtype=np.float32)
+    result[:h, :w] = img1.astype(np.float32) * weight1[:, :, np.newaxis]
+    result += warped_img2.astype(np.float32) * weight2[:, :, np.newaxis]
+    
+    return result.astype(np.uint8)
+
+# 4. Exposure Compensation
+def _exposure_compensation(self, images):
+    """曝光补偿减少亮度差异"""
+    # Calculate average brightness for each image
+    avg_brightness = [np.mean(img) for img in images]
+    
+    # Use first image as reference
+    reference_brightness = avg_brightness[0]
+    
+    # Adjust each image
+    compensated = []
+    for img, brightness in zip(images, avg_brightness):
+        ratio = reference_brightness / (brightness + 1e-6)
+        adjusted = np.clip(img.astype(np.float32) * ratio, 0, 255).astype(np.uint8)
+        compensated.append(adjusted)
+    
+    return compensated
+```
+
+**Debugging Steps**:
+1. **Visualize Feature Matches**: Draw lines between matched features to verify correctness
+2. **Check Homography Quality**: Verify inlier ratio (should be >50%)
+3. **Inspect Overlapping Region**: Examine the area where images overlap
+4. **Test with Different Images**: Try with images that have more/less texture
+5. **Check Camera Parameters**: Ensure consistent focal length and exposure
+
+**Prevention**:
+1. **Input Image Quality**: Ensure sufficient overlap (30-50%) between images
+2. **Scene Requirements**: Avoid scenes with moving objects or significant depth variation
+3. **Camera Settings**: Use consistent exposure and white balance
+4. **Feature Richness**: Ensure images have enough texture for feature detection
+5. **Validation**: Add quality checks before and after stitching
+
+**Testing**:
+```python
+# Test case for ghosting detection
+def test_stitching_ghosting():
+    stitcher = ImageStitchingTool()
+    
+    # Load test images
+    img1 = cv2.imread("test_image_1.jpg")
+    img2 = cv2.imread("test_image_2.jpg")
+    
+    # Perform stitching
+    result = stitcher.stitch([img1, img2])
+    
+    # Check for ghosting artifacts
+    # Compare overlapping regions
+    overlap_region = result[:, img1.shape[1]-50:img1.shape[1]+50]
+    variance = np.var(overlap_region)
+    
+    # High variance in overlap region indicates ghosting
+    assert variance < threshold, "Ghosting detected in stitched image"
+```
