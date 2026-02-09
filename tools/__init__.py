@@ -14,6 +14,7 @@ from . import analysis
 # 导入根目录工具文件
 from . import image_source
 from . import camera_parameter_setting
+from . import multi_image_selector
 
 # 重新导出常用工具
 from .vision import *
@@ -24,6 +25,7 @@ __all__ = [
     # 图像源工具
     'ImageSource',
     'CameraSource',
+    'MultiImageSelector',
     'CameraParameterSettingTool',
     # 视觉工具
     'AppearanceDetector',

@@ -3119,6 +3119,15 @@ class MainWindow(QMainWindow):
             tool.initialize(params)
             self._logger.info(f"工具已初始化: {new_tool_name}")
 
+        # 为多图像选择器设置自动运行回调
+        if tool_name == "多图像选择器":
+            try:
+                from tools.multi_image_selector import MultiImageSelector
+                MultiImageSelector.set_auto_run_callback(lambda: self.run_once())
+                self._logger.info(f"多图像选择器已设置自动运行回调: {new_tool_name}")
+            except Exception as e:
+                self._logger.error(f"设置多图像选择器回调失败: {e}")
+
         # 设置工具位置
         tool.position = {"x": position.x(), "y": position.y()}
         

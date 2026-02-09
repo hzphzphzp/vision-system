@@ -427,7 +427,9 @@ class ToolBase(ABC):
             if options is not None:
                 self._params[f"__options_{key}"] = options
 
-            self._logger.info(f"【set_param】设置参数: {self._name}.{key} = '{fixed_value}' (旧值: '{old_value}')")
+            value_str = str(fixed_value) if not isinstance(fixed_value, (dict, list)) else repr(fixed_value)
+            old_value_str = str(old_value) if not isinstance(old_value, (dict, list)) else repr(old_value)
+            self._logger.info(f"【set_param】设置参数: {self._name}.{key} = '{value_str}' (旧值: '{old_value_str}')")
 
             # 触发参数变更回调
             self._on_param_changed(key, old_value, fixed_value)

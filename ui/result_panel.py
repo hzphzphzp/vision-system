@@ -280,11 +280,18 @@ class ResultPanelWidget(QWidget):
         # 更新显示
         self._update_display()
 
-        # 记录日志
+        safe_details = {}
+        if details:
+            for key, value in details.items():
+                safe_key = key
+                if key in ['filename', 'lineno', 'funcName', 'module', 'name']:
+                    safe_key = f"detail_{key}"
+                safe_details[safe_key] = value
+        
         self._logger.log(
             getattr(logging, result_type.value.upper(), logging.INFO),
             f"{tool_name}: {message}",
-            extra=details,
+            extra=safe_details,
         )
 
     def add_info(

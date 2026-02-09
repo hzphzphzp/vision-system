@@ -95,6 +95,7 @@ class ParameterType(Enum):
     FILE_PATH = "file_path"
     DIRECTORY_PATH = "directory_path"
     IMAGE_FILE_PATH = "image_file_path"  # 专门用于选择图片文件
+    FILE_LIST = "file_list"  # 多文件列表（用于多图像选择器）
     ROI_RECT = "roi_rect"  # 矩形ROI选择
     ROI_LINE = "roi_line"  # 直线ROI选择
     ROI_CIRCLE = "roi_circle"  # 圆形ROI选择
@@ -163,6 +164,293 @@ class ImageFilePathSelector(FilePathSelector):
         self.set_file_filter(
             "图片文件 (*.png *.jpg *.jpeg *.bmp *.tiff *.tif);;所有文件 (*.*)"
         )
+
+
+class MultiImageSelectorWidget(QWidget):
+    """多图像选择器控件 - 支持加载多张图片、切换和自动运行"""
+
+    images_changed = pyqtSignal(list)
+    current_index_changed = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._logger = logging.getLogger("MultiImageSelectorWidget")
+        self._image_paths = []
+        self._current_index = 0
+        self._tool_instance = None
+
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        file_layout = QHBoxLayout()
+        file_layout.setSpacing(5)
+
+        self.select_btn = QPushButton("选择图片...")
+        self.select_btn.setToolTip("选择多张图片文件")
+        self.select_btn.clicked.connect(self._select_images)
+        file_layout.addWidget(self.select_btn)
+
+        self.add_btn = QPushButton("+")
+        self.add_btn.setToolTip("添加更多图片")
+        self.add_btn.setMaximumWidth(30)
+        self.add_btn.clicked.connect(self._add_images)
+        file_layout.addWidget(self.add_btn)
+
+        self.clear_btn = QPushButton("清空")
+        self.clear_btn.setToolTip("清空所有图片")
+        self.clear_btn.setMaximumWidth(50)
+        self.clear_btn.clicked.connect(self._clear_images)
+        file_layout.addWidget(self.clear_btn)
+
+        file_layout.addStretch()
+        layout.addLayout(file_layout)
+
+        self.list_label = QLabel("未加载图片")
+        self.list_label.setStyleSheet("""
+            QLabel {
+                color: #666666;
+                background-color: #f5f5f5;
+                border: 1px solid #cccccc;
+                border-radius: 3px;
+                padding: 5px;
+                min-height: 40px;
+            }
+        """)
+        self.list_label.setWordWrap(True)
+        layout.addWidget(self.list_label)
+
+        nav_layout = QHBoxLayout()
+        nav_layout.setSpacing(5)
+
+        self.prev_btn = QPushButton("◀ 上一张")
+        self.prev_btn.setToolTip("切换到上一张图片")
+        self.prev_btn.clicked.connect(self._previous_image)
+        nav_layout.addWidget(self.prev_btn)
+
+        self.info_label = QLabel("0 / 0")
+        self.info_label.setAlignment(Qt.AlignCenter)
+        self.info_label.setStyleSheet("font-weight: bold; min-width: 80px;")
+        nav_layout.addWidget(self.info_label)
+
+        self.next_btn = QPushButton("下一张 ▶")
+        self.next_btn.setToolTip("切换到下一张图片")
+        self.next_btn.clicked.connect(self._next_image)
+        nav_layout.addWidget(self.next_btn)
+
+        layout.addLayout(nav_layout)
+
+        jump_layout = QHBoxLayout()
+        jump_layout.setSpacing(5)
+
+        jump_layout.addWidget(QLabel("跳转到:"))
+        self.jump_spin = QSpinBox()
+        self.jump_spin.setMinimum(1)
+        self.jump_spin.setMaximum(9999)
+        self.jump_spin.setValue(1)
+        self.jump_spin.setToolTip("输入图片序号快速跳转")
+        jump_layout.addWidget(self.jump_spin)
+
+        self.jump_btn = QPushButton("跳转")
+        self.jump_btn.clicked.connect(self._jump_to_image)
+        jump_layout.addWidget(self.jump_btn)
+
+        jump_layout.addStretch()
+        layout.addLayout(jump_layout)
+
+        self.auto_run_checkbox = QCheckBox("切换图片后自动运行流程")
+        self.auto_run_checkbox.setChecked(True)
+        self.auto_run_checkbox.stateChanged.connect(self._on_auto_run_changed)
+        layout.addWidget(self.auto_run_checkbox)
+
+        self.loop_checkbox = QCheckBox("循环模式")
+        self.loop_checkbox.setChecked(True)
+        self.loop_checkbox.setToolTip("到最后一张后回到第一张")
+        self.loop_checkbox.stateChanged.connect(self._on_loop_changed)
+        layout.addWidget(self.loop_checkbox)
+
+        self._update_ui()
+
+    def set_tool_instance(self, tool):
+        self._tool_instance = tool
+        if tool:
+            try:
+                image_files = tool.get_param("图像文件列表", [])
+                current_index = tool.get_param("当前图像索引", 0)
+                auto_run = tool.get_param("自动运行", True)
+                loop_mode = tool.get_param("循环模式", True)
+
+                self._image_paths = image_files if image_files else []
+                self._current_index = current_index
+                self.auto_run_checkbox.setChecked(auto_run)
+                self.loop_checkbox.setChecked(loop_mode)
+
+                self._update_ui()
+            except Exception as e:
+                self._logger.error(f"同步工具数据失败: {e}")
+
+    def _select_images(self):
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "选择图片文件",
+            ".",
+            "图片文件 (*.png *.jpg *.jpeg *.bmp *.tiff *.tif);;所有文件 (*.*)"
+        )
+
+        if file_paths:
+            self._image_paths = file_paths
+            self._current_index = 0
+            self._update_ui()
+            self._sync_to_tool()
+            self.images_changed.emit(self._image_paths)
+            self._logger.info(f"选择了 {len(file_paths)} 张图片")
+
+    def _add_images(self):
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "添加图片文件",
+            ".",
+            "图片文件 (*.png *.jpg *.jpeg *.bmp *.tiff *.tif);;所有文件 (*.*)"
+        )
+
+        if file_paths:
+            self._image_paths.extend(file_paths)
+            self._update_ui()
+            self._sync_to_tool()
+            self.images_changed.emit(self._image_paths)
+            self._logger.info(f"添加了 {len(file_paths)} 张图片，总共 {len(self._image_paths)} 张")
+
+    def _clear_images(self):
+        self._image_paths = []
+        self._current_index = 0
+        self._update_ui()
+        self._sync_to_tool()
+        self.images_changed.emit(self._image_paths)
+        self._logger.info("清空图片列表")
+
+    def _previous_image(self):
+        if not self._image_paths:
+            return
+
+        loop_mode = self.loop_checkbox.isChecked()
+
+        if self._current_index > 0:
+            self._current_index -= 1
+        elif loop_mode:
+            self._current_index = len(self._image_paths) - 1
+        else:
+            return
+
+        self._update_ui()
+        self._sync_to_tool()
+        self.current_index_changed.emit(self._current_index)
+
+        if self._tool_instance:
+            try:
+                self._tool_instance.previous_image()
+            except Exception as e:
+                self._logger.error(f"调用工具previous_image失败: {e}")
+
+    def _next_image(self):
+        if not self._image_paths:
+            return
+
+        loop_mode = self.loop_checkbox.isChecked()
+
+        if self._current_index < len(self._image_paths) - 1:
+            self._current_index += 1
+        elif loop_mode:
+            self._current_index = 0
+        else:
+            return
+
+        self._update_ui()
+        self._sync_to_tool()
+        self.current_index_changed.emit(self._current_index)
+
+        if self._tool_instance:
+            try:
+                self._tool_instance.next_image()
+            except Exception as e:
+                self._logger.error(f"调用工具next_image失败: {e}")
+
+    def _jump_to_image(self):
+        if not self._image_paths:
+            return
+
+        target_index = self.jump_spin.value() - 1
+
+        if 0 <= target_index < len(self._image_paths):
+            self._current_index = target_index
+            self._update_ui()
+            self._sync_to_tool()
+            self.current_index_changed.emit(self._current_index)
+
+            if self._tool_instance:
+                try:
+                    self._tool_instance.goto_image(target_index)
+                except Exception as e:
+                    self._logger.error(f"调用工具goto_image失败: {e}")
+
+    def _on_auto_run_changed(self, state):
+        if self._tool_instance:
+            try:
+                self._tool_instance.set_param("自动运行", bool(state))
+            except Exception as e:
+                self._logger.error(f"设置自动运行参数失败: {e}")
+
+    def _on_loop_changed(self, state):
+        if self._tool_instance:
+            try:
+                self._tool_instance.set_param("循环模式", bool(state))
+            except Exception as e:
+                self._logger.error(f"设置循环模式参数失败: {e}")
+
+    def _sync_to_tool(self):
+        if self._tool_instance:
+            try:
+                self._tool_instance.set_param("图像文件列表", self._image_paths)
+                self._tool_instance.set_param("当前图像索引", self._current_index)
+                self._logger.debug(f"同步到工具: index={self._current_index}, total={len(self._image_paths)}")
+            except Exception as e:
+                self._logger.error(f"同步到工具失败: {e}")
+
+    def _update_ui(self):
+        total = len(self._image_paths)
+
+        if total == 0:
+            self.list_label.setText("未加载图片")
+            self.info_label.setText("0 / 0")
+            self.prev_btn.setEnabled(False)
+            self.next_btn.setEnabled(False)
+            self.jump_btn.setEnabled(False)
+            self.jump_spin.setMaximum(1)
+        else:
+            display_text = f"已加载 {total} 张图片:\n"
+            for i, path in enumerate(self._image_paths):
+                marker = "▶ " if i == self._current_index else "   "
+                filename = os.path.basename(path)
+                display_text += f"{marker}[{i+1}] {filename}\n"
+            self.list_label.setText(display_text)
+
+            self.info_label.setText(f"{self._current_index + 1} / {total}")
+
+            self.prev_btn.setEnabled(True)
+            self.next_btn.setEnabled(True)
+            self.jump_btn.setEnabled(True)
+            self.jump_spin.setMaximum(total)
+            self.jump_spin.setValue(self._current_index + 1)
+
+    def get_value(self):
+        return {
+            "图像文件列表": self._image_paths,
+            "当前图像索引": self._current_index,
+            "自动运行": self.auto_run_checkbox.isChecked(),
+            "循环模式": self.loop_checkbox.isChecked(),
+        }
 
 
 class ROISelectButton(QWidget):
@@ -453,6 +741,9 @@ class ParameterWidgetFactory:
             widget = ImageFilePathSelector()
             if value is not None:
                 widget.set_file_path(str(value))
+
+        elif param_type == ParameterType.FILE_LIST:
+            widget = MultiImageSelectorWidget()
 
         elif param_type == ParameterType.FILE_PATH:
             widget = FilePathSelector()
@@ -958,6 +1249,12 @@ class PropertyPanelWidget(QWidget):
             if model_path_widget:
                 model_path_widget.setVisible(model_type == "custom")
 
+        if hasattr(tool, "tool_name") and tool.tool_name == "多图像选择器":
+            image_files_widget = self._parameter_widgets.get("图像文件列表")
+            if image_files_widget and hasattr(image_files_widget, 'set_tool_instance'):
+                image_files_widget.set_tool_instance(tool)
+                self._logger.info("多图像选择器控件已设置工具实例")
+
         self.properties_layout.addWidget(param_group)
 
     def _add_camera_settings_button(self, tool, param_layout):
@@ -1020,6 +1317,8 @@ class PropertyPanelWidget(QWidget):
             param_type_lower = param_type.lower()
             if param_type_lower == "image_file_path":
                 return ParameterType.IMAGE_FILE_PATH
+            elif param_type_lower == "file_list":
+                return ParameterType.FILE_LIST
             elif param_type_lower == "file_path":
                 return ParameterType.FILE_PATH
             elif param_type_lower == "directory_path":
