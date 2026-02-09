@@ -562,7 +562,23 @@ class Solution:
                 "name": self._name,
                 "run_interval": self._run_interval,
                 "procedures": [],
+                "communication_config": [],  # 通讯配置
             }
+
+            # 保存通讯配置（从ConnectionManager获取）
+            try:
+                from ui.communication_config import get_connection_manager
+                connection_manager = get_connection_manager()
+                connections = connection_manager.get_all_connections()
+                for conn in connections:
+                    data["communication_config"].append({
+                        "id": conn.id,
+                        "name": conn.name,
+                        "protocol_type": conn.protocol_type,
+                        "config": conn.config,
+                    })
+            except Exception as e:
+                self._logger.warning(f"保存通讯配置失败: {e}")
 
             for procedure in self.procedures:
                 proc_data = {
@@ -685,6 +701,22 @@ class Solution:
                     procedure.connect(from_name, to_name, from_port, to_port)
 
                 self.add_procedure(procedure)
+
+            # 加载通讯配置（方案驱动）
+            communication_config = data.get("communication_config", [])
+            try:
+                from ui.communication_config import get_connection_manager
+                connection_manager = get_connection_manager()
+                if communication_config:
+                    # 加载方案中的通讯配置
+                    connection_manager.load_from_solution(communication_config)
+                    self._logger.info(f"已加载 {len(communication_config)} 个通讯配置")
+                else:
+                    # 如果方案中没有通讯配置，清空现有配置
+                    connection_manager.clear_all_connections()
+                    self._logger.info("方案中无通讯配置，已清空现有配置")
+            except Exception as e:
+                self._logger.warning(f"加载通讯配置失败: {e}")
 
             # 保存加载的路径
             self._solution_path = path

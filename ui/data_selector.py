@@ -277,6 +277,13 @@ class DataSelectorDialog(QDialog):
             "correlation": "相关性",
             "offset": "偏移量",
             "shift": "位移",
+            "match_count": "匹配数量",
+            "matches": "匹配列表",
+            "best_x": "最佳匹配X",
+            "best_y": "最佳匹配Y",
+            "best_score": "最佳匹配分数",
+            "template_width": "模板宽度",
+            "template_height": "模板高度",
             
             # 测量相关
             "measurement": "测量值",

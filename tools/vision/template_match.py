@@ -265,6 +265,8 @@ class GrayMatch(ROIToolMixin, VisionAlgorithmToolBase):
 
         # 保存结果
         self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "match"  # 设置结果类别，以便结果面板正确显示
         self._result_data.set_value("match_count", len(filtered_locations))
         self._result_data.set_value("matches", filtered_locations)
 
@@ -280,6 +282,18 @@ class GrayMatch(ROIToolMixin, VisionAlgorithmToolBase):
             self._result_data.set_value(
                 "template_height", self._template_image.shape[0]
             )
+            
+            # 设置结果面板期望的字段
+            self._result_data.set_value("matched", True)
+            self._result_data.set_value("score", best_match[2])
+            self._result_data.set_value("center", {"x": best_match[0], "y": best_match[1]})
+            self._result_data.set_value("match_score", best_match[2])
+        else:
+            # 没有匹配时设置失败状态
+            self._result_data.set_value("matched", False)
+            self._result_data.set_value("score", 0.0)
+            self._result_data.set_value("center", {})
+            self._result_data.set_value("match_score", 0.0)
 
         # 绘制结果
         output_image = draw_matches(

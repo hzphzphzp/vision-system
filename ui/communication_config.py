@@ -250,19 +250,30 @@ class ConnectionManager:
         return cls._instance
 
     def __init__(self):
-        self._connections: Dict[str, ProtocolConnection] = {}
-        self._lock = threading.Lock()
-        self._status_callback: Optional[Callable] = None
-        self._storage = ConnectionStorage()
-        self._pending_workers: Dict[str, ProtocolCreateWorker] = {}
-        # 从存储加载已有配置
-        self._load_connections_from_storage()
+        # 只在第一次初始化时创建属性，避免单例重复初始化清空数据
+        if not hasattr(self, '_initialized'):
+            self._connections: Dict[str, ProtocolConnection] = {}
+            self._lock = threading.Lock()
+            self._status_callback: Optional[Callable] = None
+            self._storage = ConnectionStorage()
+            self._pending_workers: Dict[str, ProtocolCreateWorker] = {}
+            # 注意：不再自动加载全局配置，配置由方案驱动
+            # 当加载方案时，方案会调用相应方法加载通讯配置
+            self._initialized = True
 
-    def _load_connections_from_storage(self):
-        """从存储加载连接配置"""
+    def load_from_solution(self, communication_config: List[Dict]):
+        """从方案加载连接配置
+        
+        Args:
+            communication_config: 方案中的通讯配置列表
+        """
         try:
-            stored_connections = self._storage.load_connections()
-            for conn_data in stored_connections:
+            # 清空现有连接
+            with self._lock:
+                self._connections.clear()
+            
+            # 加载方案中的连接
+            for conn_data in communication_config:
                 connection = ProtocolConnection(
                     id=conn_data["id"],
                     name=conn_data["name"],
@@ -272,9 +283,25 @@ class ConnectionManager:
                     status="未连接",
                 )
                 self._connections[connection.id] = connection
-            logger.info(f"[ConnectionManager] 从存储加载了 {len(stored_connections)} 个连接配置")
+            logger.info(f"[ConnectionManager] 从方案加载了 {len(communication_config)} 个连接配置")
         except Exception as e:
-            logger.error(f"[ConnectionManager] 从存储加载连接配置失败: {e}")
+            logger.error(f"[ConnectionManager] 从方案加载连接配置失败: {e}")
+    
+    def clear_all_connections(self):
+        """清空所有连接配置"""
+        try:
+            with self._lock:
+                # 断开所有连接
+                for conn in self._connections.values():
+                    if conn.protocol_instance and hasattr(conn.protocol_instance, 'disconnect'):
+                        try:
+                            conn.protocol_instance.disconnect()
+                        except:
+                            pass
+                self._connections.clear()
+            logger.info("[ConnectionManager] 已清空所有连接配置")
+        except Exception as e:
+            logger.error(f"[ConnectionManager] 清空连接配置失败: {e}")
 
     def set_status_callback(self, callback: Callable):
         """设置状态回调"""
@@ -416,16 +443,14 @@ class ConnectionManager:
         return conn_to_remove is not None
 
     def _save_connections_async(self):
-        """异步保存连接配置"""
-        def do_save():
-            try:
-                connections = self.get_all_connections()
-                self._storage.save_connections(connections)
-            except Exception as e:
-                logger.error(f"保存连接失败: {e}")
-
-        save_thread = threading.Thread(target=do_save, daemon=True)
-        save_thread.start()
+        """异步保存连接配置（方案驱动，不保存到文件）
+        
+        注意：通讯配置现在由方案驱动，会在保存方案时一起保存。
+        此方法不再执行实际的文件保存操作。
+        """
+        # 方案驱动模式下，配置不保存到全局文件
+        # 只在内存中维护，由方案保存时统一持久化
+        pass
 
     def force_remove_connection(self, connection_id: str) -> bool:
         """强制移除连接（已废弃，使用remove_connection）"""
@@ -460,9 +485,14 @@ class ConnectionManager:
         return result
 
     def _save_connections(self):
-        """保存连接配置"""
-        connections = self.get_all_connections()
-        self._storage.save_connections(connections)
+        """保存连接配置到内存（方案驱动，不保存到文件）
+        
+        注意：通讯配置现在由方案驱动，会在保存方案时一起保存。
+        此方法仅用于内部状态管理，不再保存到全局文件。
+        """
+        # 方案驱动模式下，配置不保存到全局文件
+        # 只在内存中维护，由方案保存时统一持久化
+        pass
 
 
 class ConnectionConfigDialog(QDialog):
@@ -588,6 +618,9 @@ class ConnectionConfigDialog(QDialog):
 
     def load_connection(self, connection_id: str):
         """加载连接配置"""
+        # 保存连接ID，确保编辑时保持相同的ID
+        self.connection_id = connection_id
+        
         conn = self.connection_manager.get_connection(connection_id)
         if conn:
             self.name_edit.setText(conn.name)
@@ -652,7 +685,8 @@ class CommunicationConfigWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.connection_manager = ConnectionManager()
+        # 使用单例获取ConnectionManager，确保与方案加载使用的是同一个实例
+        self.connection_manager = get_connection_manager()
         self.connection_manager.set_status_callback(self.on_connection_status_changed)
         self.setup_ui()
 
@@ -699,11 +733,11 @@ class CommunicationConfigWidget(QWidget):
 
         self.connection_table.itemSelectionChanged.connect(self.on_selection_changed)
 
-        # 初始加载已有连接
-        self.refresh_connections()
+        # 注意：不再自动加载全局配置，配置由方案驱动
+        # 当加载方案时，会调用refresh_connections()刷新显示
 
     def add_connection(self):
-        """添加连接"""
+        """添加连接（非阻塞版本）"""
         dialog = ConnectionConfigDialog(self)
         if dialog.exec_() == QDialog.Accepted:
             connection_data = dialog.get_connection_data()
@@ -716,8 +750,10 @@ class CommunicationConfigWidget(QWidget):
 
             # 异步添加连接
             if self.connection_manager.add_connection(connection):
+                # 立即刷新显示，不显示阻塞的对话框
                 self.refresh_connections()
-                QMessageBox.information(self, "提示", "连接已添加，正在后台建立连接...")
+                # 更新状态栏显示连接状态
+                self.status_label.setText(f"连接 '{connection.name}' 正在建立中...")
             else:
                 QMessageBox.warning(self, "警告", "添加连接失败")
 
@@ -748,8 +784,10 @@ class CommunicationConfigWidget(QWidget):
 
             # 异步添加新连接
             if self.connection_manager.add_connection(new_connection):
+                # 立即刷新显示，不显示阻塞的对话框
                 self.refresh_connections()
-                QMessageBox.information(self, "提示", "连接已更新，正在重新建立连接...")
+                # 更新状态栏显示连接状态
+                self.status_label.setText(f"连接 '{new_connection.name}' 正在重新建立中...")
             else:
                 QMessageBox.warning(self, "警告", "更新连接失败")
 
@@ -916,8 +954,19 @@ class CommunicationConfigWidget(QWidget):
             self.status_label.setText("就绪")
 
     def on_connection_status_changed(self, connection):
-        """连接状态变化回调"""
-        self.refresh_connections()
+        """连接状态变化回调（使用延迟刷新避免频繁更新）"""
+        # 使用单次定时器延迟刷新，避免频繁更新UI导致卡顿
+        if not hasattr(self, '_refresh_timer'):
+            self._refresh_timer = QTimer(self)
+            self._refresh_timer.setSingleShot(True)
+            self._refresh_timer.timeout.connect(self.refresh_connections)
+        
+        # 如果定时器已经在运行，停止并重新启动
+        if self._refresh_timer.isActive():
+            self._refresh_timer.stop()
+        
+        # 延迟100ms刷新，合并多次状态变化
+        self._refresh_timer.start(100)
 
 
 # 全局实例
@@ -925,11 +974,13 @@ _connection_manager = None
 
 
 def get_connection_manager() -> ConnectionManager:
-    """获取连接管理器实例"""
-    global _connection_manager
-    if _connection_manager is None:
-        _connection_manager = ConnectionManager()
-    return _connection_manager
+    """获取连接管理器实例（单例）
+    
+    使用ConnectionManager的__new__方法确保单例，
+    此函数提供统一的获取入口。
+    """
+    # 直接创建实例，__new__方法会确保返回单例
+    return ConnectionManager()
 
 
 def get_communication_config_widget(parent=None) -> CommunicationConfigWidget:

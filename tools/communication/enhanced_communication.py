@@ -174,22 +174,37 @@ class SendDataTool(ToolBase):
         
         if key == "目标连接":
             # 检查是否需要刷新连接列表
-            if new_value == "点击刷新获取连接列表" or old_value == "点击刷新获取连接列表":
-                self._logger.info("【_on_param_changed】刷新连接列表")
+            # 当选择"点击刷新获取连接列表"或"暂无可用连接"时，刷新列表
+            if new_value in ["点击刷新获取连接列表", "暂无可用连接"] or old_value == "点击刷新获取连接列表":
+                self._logger.info(f"【_on_param_changed】刷新连接列表，新值: '{new_value}', 旧值: '{old_value}'")
                 self._refresh_connection_options()
     
     def _refresh_connection_options(self):
         """刷新连接列表选项"""
         try:
+            self._logger.info("【_refresh_connection_options】开始刷新连接列表...")
+            
+            # 清除缓存，强制获取最新连接
+            if hasattr(self, '_connections_cache'):
+                delattr(self, '_connections_cache')
+                self._logger.debug("【_refresh_connection_options】已清除连接缓存")
+            
             available_connections = self._get_available_connections()
             self._logger.info(f"【_refresh_connection_options】获取到 {len(available_connections)} 个连接")
             
             if available_connections:
                 self._params["__options_目标连接"] = available_connections
+                # 自动选择第一个可用连接
+                first_connection = available_connections[0]
+                self.set_param("目标连接", first_connection)
+                self._logger.info(f"【_refresh_connection_options】自动选择第一个连接: {first_connection}")
             else:
                 self._params["__options_目标连接"] = ["暂无可用连接"]
+                # 清空当前选择
+                self.set_param("目标连接", "")
+                self._logger.warning("【_refresh_connection_options】没有可用的连接")
         except Exception as e:
-            self._logger.error(f"【_refresh_connection_options】刷新连接列表失败: {e}")
+            self._logger.error(f"【_refresh_connection_options】刷新连接列表失败: {e}", exc_info=True)
             self._params["__options_目标连接"] = ["刷新失败，请重试"]
     
     def _update_data_content_options(self):
@@ -330,13 +345,14 @@ class SendDataTool(ToolBase):
         """
         import time
         
-        # 检查缓存
+        # 检查缓存（缩短缓存时间以获取最新连接）
         cache_attr = '_connections_cache'
-        cache_timeout = 5.0  # 5秒缓存
+        cache_timeout = 1.0  # 1秒缓存，确保能获取最新连接状态
         
         if hasattr(self, cache_attr):
             cache_time, cache_data = getattr(self, cache_attr)
             if time.time() - cache_time < cache_timeout:
+                self._logger.debug(f"使用缓存的连接列表，缓存时间: {time.time() - cache_time:.2f}秒")
                 return cache_data
         
         try:
@@ -345,12 +361,26 @@ class SendDataTool(ToolBase):
             
             # 快速检查连接管理器是否可用（非阻塞）
             if conn_manager is None:
+                self._logger.warning("【_get_available_connections】连接管理器为None")
                 return []
+            
+            self._logger.debug(f"【_get_available_connections】连接管理器类型: {type(conn_manager)}")
             
             # 方法1：使用get_available_connections（推荐）
             if hasattr(conn_manager, 'get_available_connections'):
                 connections = conn_manager.get_available_connections()
-                self._logger.debug(f"获取到 {len(connections)} 个可用连接")
+                self._logger.info(f"【_get_available_connections】从连接管理器获取到 {len(connections)} 个可用连接")
+                
+                if not connections:
+                    # 如果没有可用连接，尝试获取所有连接（包括未连接的）用于调试
+                    if hasattr(conn_manager, 'get_all_connections'):
+                        all_connections = conn_manager.get_all_connections()
+                        self._logger.debug(f"【_get_available_connections】所有连接数量: {len(all_connections)}")
+                        for conn in all_connections:
+                            conn_id = getattr(conn, 'id', 'unknown')
+                            is_connected = getattr(conn, 'is_connected', False)
+                            self._logger.debug(f"  连接 {conn_id}: is_connected={is_connected}")
+                
                 for conn in connections:
                     display_name = conn.get("display_name", "")
                     device_id = conn.get("device_id", "")
@@ -473,16 +503,24 @@ class SendDataTool(ToolBase):
                 connection_id = self.get_param("目标连接", "")
                 self._logger.info(f"【调试】使用get_param获取: '{connection_id}'")
             
+            # 检查是否是提示文本，如果是则自动刷新
+            if connection_id in ["点击刷新获取连接列表", "暂无可用连接", "刷新失败，请重试"]:
+                self._logger.info(f"【调试】当前选择的是提示文本 '{connection_id}'，自动刷新连接列表")
+                self._refresh_connection_options()
+                # 重新获取连接ID
+                connection_id = self.get_param("目标连接", "")
+                self._logger.info(f"【调试】刷新后获取的连接ID: '{connection_id}'")
+            
             self._logger.info(f"【调试】最终目标连接: '{connection_id}'")
             self._logger.info(f"【调试】最终目标连接类型: {type(connection_id)}")
             self._logger.info(f"【调试】最终目标连接长度: {len(str(connection_id)) if connection_id else 0}")
             
-            if not connection_id:
-                self._logger.error("未选择连接")
+            if not connection_id or connection_id in ["点击刷新获取连接列表", "暂无可用连接", "刷新失败，请重试"]:
+                self._logger.error("未选择有效的连接")
                 self._logger.error(f"可用参数: {list(all_params.keys())}")
                 return {
                     "status": False,
-                    "message": "未选择连接，请在属性面板中选择通讯连接",
+                    "message": "未选择有效的通讯连接，请在属性面板中选择",
                     "发送成功次数": self._send_count,
                     "发送失败次数": self._fail_count
                 }
@@ -840,9 +878,10 @@ class SendDataTool(ToolBase):
                 return json.dumps(data, ensure_ascii=False)
             return json.dumps({"data": data}, ensure_ascii=False)
         elif format_lower == "ascii" or format_lower == "字符串":
+            # 使用UTF-8编码以支持中文字符
             if isinstance(data, str):
-                return data.encode("ascii")
-            return str(data).encode("ascii")
+                return data.encode("utf-8")
+            return str(data).encode("utf-8")
         elif format_lower == "hex":
             if isinstance(data, str):
                 return data.encode("utf-8").hex().upper()

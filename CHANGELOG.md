@@ -87,31 +87,56 @@
   - 原因：访问了不存在的公共属性，实际应为私有属性`_current_tool`
   - 修复：更正属性访问方式
 
-- **修复通讯配置保存问题**
-  - 问题：通讯配置无法保存到文件，重启后丢失
-  - 原因：`ConnectionStorage`类仅支持内存存储
-  - 修复：添加文件持久化功能，保存到`config/communication_config.json`
+- **修复通讯配置单例模式问题**
+  - 问题：发送数据工具无法找到通讯连接，或找到错误的连接
+  - 原因：`ConnectionManager`的`__init__`方法每次都被调用，导致连接数据被清空
+  - 修复：添加`_initialized`标志，避免单例重复初始化清空数据
 
-- **修复通讯配置加载问题**
-  - 问题：保存的通讯配置无法加载显示
-  - 原因：`ConnectionManager`初始化时未从存储加载配置
-  - 修复：添加`_load_connections_from_storage()`方法，初始化时自动加载
+- **修复通讯配置编辑卡顿问题**
+  - 问题：编辑通讯配置时程序卡顿无响应
+  - 原因：`QMessageBox.information`模态对话框阻塞事件循环
+  - 修复：移除阻塞对话框，改为更新状态栏；使用`QTimer`延迟刷新UI
 
-- **禁止自动生成默认方案**
-  - 问题：系统启动时强制生成界面内解决方案，不符合实际需求
-  - 原因：`MainWindow.__init__`中自动创建默认方案和流程
-  - 修复：
-    - 初始化时设置`solution = None`和`current_procedure = None`
-    - 所有使用方案的地方添加空值检查
-    - 运行流程时提示用户创建或加载方案
-    - 状态栏显示"未加载"提示
+- **修复图像拼接结果不显示问题**
+  - 问题：图像拼接工具执行后结果面板不显示结果
+  - 原因：`process`方法返回的`ResultData`没有保存到`_result_data`
+  - 修复：在`_run_impl`方法中将`process`返回的`ResultData`保存到`self._result_data`
+
+- **修复灰度匹配结果显示问题**
+  - 问题：灰度匹配结果显示"匹配失败：相似度=0.00%"，但实际匹配成功
+  - 原因：结果面板期望的字段名（`matched`、`score`、`center`）与工具设置的字段名（`best_score`、`best_x`、`best_y`）不一致
+  - 修复：在灰度匹配工具中添加结果面板期望的字段；设置`result_category = "match"`使结果面板正确显示
+
+- **修复结果面板显示不完整问题**
+  - 问题：结果面板只显示2条结果，但算法编辑器有4个模块
+  - 原因：`add_result`方法使用`tool_name`（工具类型名称）区分结果，导致相同类型的工具结果被合并
+  - 修复：使用`tool.name`（工具实例名称）区分不同工具实例
+
+- **修复数据选择器缺少图像结果问题**
+  - 问题：数据选择器中缺少图像拼接工具的图像结果
+  - 原因：`_update_property_panel_modules`方法只检查`result_data._values`，没有检查`result_data._images`
+  - 修复：添加对`result_data._images`的检查，将图像数据也添加到可用模块
+
+- **修复发送数据编码错误**
+  - 问题：发送数据时报错`'ascii' codec can't encode characters`
+  - 原因：`_format_data`方法使用`encode("ascii")`无法编码中文字符
+  - 修复：将ASCII编码改为UTF-8编码
+
+- **修复热重载回调错误（结果面板）**
+  - 问题：热重载时报错`'EnhancedResultDockWidget' object has no attribute 'refresh'`
+  - 原因：`EnhancedResultDockWidget`类缺少`refresh`方法
+  - 修复：添加`refresh`方法，刷新增强面板和传统面板
+
+- **修复发送数据目标连接刷新问题**
+  - 问题：发送数据工具的目标连接需要多次点击才刷新，或选择"点击刷新获取连接列表"后未自动选择实际连接
+  - 原因：缓存时间过长，刷新后未自动选择第一个可用连接
+  - 修复：缩短缓存时间到1秒；刷新后自动选择第一个可用连接；运行时自动刷新
 
 ### 📝 文档更新
 
-- 更新AGENTS.md，添加第23、24节错误记录
+- 更新CHANGELOG.md，添加通讯配置、结果面板、发送数据等修复记录
 - 更新性能基准测试报告，添加图像拼接性能数据
 - 更新README.md，添加图像拼接优化信息
-- 新增CHANGELOG.md文件
 
 ### 🔢 性能数据
 

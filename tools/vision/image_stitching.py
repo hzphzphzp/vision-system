@@ -1939,6 +1939,11 @@ class ImageStitchingTool(ToolBase):
 
             # 调用process方法进行多图像拼接
             process_result = self.process(self._input_data_list)
+            
+            # 保存结果数据到_result_data，以便结果面板可以显示
+            self._result_data = process_result
+            if not self._result_data.tool_name:
+                self._result_data.tool_name = self._name
 
             if process_result.status and hasattr(process_result, "get_image"):
                 stitched_image = process_result.get_image("stitched_image")

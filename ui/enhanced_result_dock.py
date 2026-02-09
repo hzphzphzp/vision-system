@@ -133,6 +133,19 @@ class EnhancedResultDockWidget(QDockWidget):
         """
         self.enhanced_panel.remove_result_by_tool_name(tool_name)
 
+    def refresh(self):
+        """刷新结果面板（热重载回调用）"""
+        try:
+            # 刷新增强面板
+            if hasattr(self.enhanced_panel, 'refresh'):
+                self.enhanced_panel.refresh()
+            # 刷新传统面板
+            if hasattr(self.traditional_panel, 'refresh'):
+                self.traditional_panel.refresh()
+            logger.info("结果面板已刷新")
+        except Exception as e:
+            logger.error(f"刷新结果面板失败: {e}")
+
 
 if __name__ == "__main__":
     import sys
