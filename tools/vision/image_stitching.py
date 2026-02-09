@@ -514,6 +514,7 @@ class ImageStitchingTool(ToolBase):
         """
         result = ResultData()
         result.tool_name = self._name
+        result.result_category = "image_processing"  # 设置结果类别，以便结果面板正确显示
 
         # 修复：每次处理前清空输入数据列表，防止累积
         # 注意：必须在处理开始前清空，因为上游工具可能已经通过 set_input 累积了数据
@@ -1993,6 +1994,11 @@ class ImageStitchingTool(ToolBase):
 
             # 调用process方法进行多图像拼接
             process_result = self.process(self._input_data_list)
+            
+            # 保存结果数据到_result_data，以便结果面板可以显示
+            self._result_data = process_result
+            if not self._result_data.tool_name:
+                self._result_data.tool_name = self._name
 
             if process_result.status and hasattr(process_result, "get_image"):
                 stitched_image = process_result.get_image("stitched_image")

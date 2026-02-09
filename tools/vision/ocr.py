@@ -221,6 +221,8 @@ class OCRReader(RecognitionToolBase):
                         )
 
             self._result_data = ResultData()
+            self._result_data.tool_name = self._name
+            self._result_data.result_category = "ocr"
             self._result_data.set_value("text_count", len(texts))
             self._result_data.set_value("texts", texts)
             self._result_data.set_value("full_text", "\n".join(texts))
@@ -446,6 +448,8 @@ class OCREnglish(RecognitionToolBase):
                         )
 
             self._result_data = ResultData()
+            self._result_data.tool_name = self._name
+            self._result_data.result_category = "ocr"
             self._result_data.set_value("text_count", len(texts))
             self._result_data.set_value("texts", texts)
             self._result_data.set_value("full_text", "\n".join(texts))

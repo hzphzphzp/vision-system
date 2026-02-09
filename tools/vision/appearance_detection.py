@@ -228,6 +228,8 @@ class AppearanceDetector(VisionAlgorithmToolBase):
 
         # 保存结果
         self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "detection"
         self._result_data.set_value("defects", defects)
         self._result_data.set_value("defect_count", len(defects))
         self._result_data.set_value(
@@ -371,6 +373,8 @@ class SurfaceDefectDetector(VisionAlgorithmToolBase):
 
         # 保存结果
         self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "detection"
         self._result_data.set_value("defects", defects)
         self._result_data.set_value("defect_count", len(defects))
         self._result_data.set_value(

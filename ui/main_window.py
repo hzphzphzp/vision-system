@@ -2239,10 +2239,12 @@ class MainWindow(QMainWindow):
             self._logger.info(f"[MAIN] 从图像缓存中移除工具: {tool.tool_name}")
 
         # 从结果面板中移除该模块的结果
+        # 使用 tool.name（实例名称）而不是 tool.tool_name（类型名称）
+        # 因为添加结果时使用的是 tool.name
         if hasattr(self, "result_dock") and self.result_dock:
             try:
-                self.result_dock.remove_result_by_tool_name(tool.tool_name)
-                self._logger.info(f"[MAIN] 从结果面板中移除模块结果: {tool.tool_name}")
+                self.result_dock.remove_result_by_tool_name(tool.name)
+                self._logger.info(f"[MAIN] 从结果面板中移除模块结果: {tool.name}")
             except Exception as e:
                 self._logger.error(f"[MAIN] 从结果面板中移除模块结果失败: {e}")
 

@@ -21,7 +21,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from core.tool_base import ToolBase, ToolParameter, ToolRegistry
-from data.image_data import ImageData
+from data.image_data import ImageData, ResultData
 
 
 @ToolRegistry.register
@@ -170,6 +170,15 @@ class GeometricTransformTool(ToolBase):
         output_data = ImageData(result_image, width, height, channels)
         
         self._logger.info(f"几何变换完成: 输出尺寸={width}x{height}")
+        
+        # 设置结果数据
+        self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "transform"
+        self._result_data.set_value("transform_type", transform_type)
+        self._result_data.set_value("rotation_angle", rotation_angle)
+        self._result_data.set_value("output_width", width)
+        self._result_data.set_value("output_height", height)
         
         return {
             "OutputImage": output_data,

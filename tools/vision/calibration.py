@@ -416,6 +416,8 @@ class CalibrationTool(ToolBase):
 
         # 设置结果
         self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "calibration"
         self._result_data.set_value("calibrated", self._calibrated)
         self._result_data.set_value("pixel_per_mm_x", self._pixel_per_mm_x)
         self._result_data.set_value("pixel_per_mm_y", self._pixel_per_mm_y)

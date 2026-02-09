@@ -109,6 +109,8 @@ class BarcodeReader(RecognitionToolBase):
 
         # 处理结果
         self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "barcode"
 
         if barcodes:
             results = []
@@ -167,7 +169,21 @@ class BarcodeReader(RecognitionToolBase):
                     )
 
             self._result_data.set_value("count", len(results))
-            self._result_data.set_value("barcodes", results)
+            self._result_data.set_value("codes", results)  # 使用codes字段以兼容结果面板
+            self._result_data.set_value("barcodes", results)  # 保留barcodes字段用于兼容性
+            
+            # 将第一个条码的结果拆分为单独字段，方便数据选择
+            if results:
+                first_code = results[0]
+                self._result_data.set_value("code_data", first_code.get("data", ""))
+                self._result_data.set_value("code_type", first_code.get("type", ""))
+                rect = first_code.get("rect", {})
+                self._result_data.set_value("code_x", rect.get("x", 0))
+                self._result_data.set_value("code_y", rect.get("y", 0))
+                self._result_data.set_value("code_width", rect.get("width", 0))
+                self._result_data.set_value("code_height", rect.get("height", 0))
+                self._result_data.set_value("code_confidence", first_code.get("confidence", 1.0))
+            
             self._result_data.set_value("status", "OK")
             self._logger.info(f"识别到 {len(results)} 个条码")
 
@@ -315,6 +331,8 @@ class QRCodeReader(RecognitionToolBase):
 
         # 处理结果
         self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "qrcode"
 
         if qr_objects:
             results = []
@@ -368,6 +386,18 @@ class QRCodeReader(RecognitionToolBase):
 
             self._result_data.set_value("count", len(results))
             self._result_data.set_value("qrcodes", results)
+            
+            # 将第一个二维码的结果拆分为单独字段，方便数据选择
+            if results:
+                first_qr = results[0]
+                self._result_data.set_value("qrcode_data", first_qr.get("data", ""))
+                self._result_data.set_value("qrcode_type", "QRCODE")
+                rect = first_qr.get("rect", {})
+                self._result_data.set_value("qrcode_x", rect.get("x", 0))
+                self._result_data.set_value("qrcode_y", rect.get("y", 0))
+                self._result_data.set_value("qrcode_width", rect.get("width", 0))
+                self._result_data.set_value("qrcode_height", rect.get("height", 0))
+            
             self._result_data.set_value("status", "OK")
             self._logger.info(f"识别到 {len(results)} 个二维码")
 
@@ -577,8 +607,22 @@ class CodeReader(RecognitionToolBase):
 
         # 保存结果
         self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "code"
         self._result_data.set_value("count", len(all_results))
         self._result_data.set_value("codes", all_results)
+        
+        # 将第一个码的结果拆分为单独字段，方便数据选择
+        if all_results:
+            first_code = all_results[0]
+            self._result_data.set_value("code_data", first_code.get("data", ""))
+            self._result_data.set_value("code_type", first_code.get("type", ""))
+            rect = first_code.get("rect", {})
+            self._result_data.set_value("code_x", rect.get("x", 0))
+            self._result_data.set_value("code_y", rect.get("y", 0))
+            self._result_data.set_value("code_width", rect.get("width", 0))
+            self._result_data.set_value("code_height", rect.get("height", 0))
+        
         self._result_data.set_value(
             "status", "OK" if all_results else "No code found"
         )

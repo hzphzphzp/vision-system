@@ -21,7 +21,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from core.tool_base import ToolBase, ToolParameter, ToolRegistry
-from data.image_data import ImageData
+from data.image_data import ImageData, ResultData
 
 
 @ToolRegistry.register
@@ -248,6 +248,14 @@ class ImageSaverTool(ToolBase):
             input_image.height,
             input_image.channels
         )
+        
+        # 设置结果数据
+        self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "saver"
+        self._result_data.set_value("save_path", file_path)
+        self._result_data.set_value("save_count", self._save_count)
+        self._result_data.set_value("image_format", image_format)
         
         return {
             "OutputImage": output_image,

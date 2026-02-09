@@ -225,8 +225,8 @@ class DataSelectorDialog(QDialog):
             "timestamp": "时间戳",
             
             # 图像相关
-            "width": "width",
-            "height": "height",
+            "width": "宽度",
+            "height": "高度",
             "channels": "通道数",
             "format": "格式",
             "size": "大小",
@@ -270,6 +270,21 @@ class DataSelectorDialog(QDialog):
             "content": "内容",
             "data": "数据",
             "text": "文本",
+            # 条码识别单独字段
+            "code_data": "码值内容",
+            "code_type": "码类型",
+            "code_x": "码X坐标",
+            "code_y": "码Y坐标",
+            "code_width": "码宽度",
+            "code_height": "码高度",
+            "code_confidence": "置信度",
+            # 二维码单独字段
+            "qrcode_data": "二维码内容",
+            "qrcode_type": "二维码类型",
+            "qrcode_x": "二维码X坐标",
+            "qrcode_y": "二维码Y坐标",
+            "qrcode_width": "二维码宽度",
+            "qrcode_height": "二维码高度",
             
             # 匹配相关
             "template": "模板",
@@ -302,6 +317,13 @@ class DataSelectorDialog(QDialog):
             "saturation": "饱和度",
             "hue": "色调",
             
+            # 图像拼接相关
+            "stitched_image": "拼接图像",
+            "stitched_width": "拼接宽度",
+            "stitched_height": "拼接高度",
+            "input_images_count": "输入图像数量",
+            "processing_time": "处理时间",
+            
             # 通信相关
             "device_id": "设备ID",
             "connection": "连接",
@@ -309,6 +331,34 @@ class DataSelectorDialog(QDialog):
             "received": "已接收",
             "send_count": "发送次数",
             "receive_count": "接收次数",
+            
+            # OCR相关
+            "text_count": "文本数量",
+            "texts": "文本列表",
+            "full_text": "完整文本",
+            "results": "详细结果",
+            
+            # 外观检测相关
+            "defects": "缺陷列表",
+            "defect_count": "缺陷数量",
+            "detection_type": "检测类型",
+            "defect_type": "缺陷类型",
+            
+            # 标定相关
+            "calibrated": "已标定",
+            "pixel_per_mm_x": "X方向像素密度",
+            "pixel_per_mm_y": "Y方向像素密度",
+            "output_unit": "输出单位",
+            
+            # 几何变换相关
+            "transform_type": "变换类型",
+            "rotation_angle": "旋转角度",
+            "output_width": "输出宽度",
+            "output_height": "输出高度",
+            
+            # 图像保存相关
+            "save_path": "保存路径",
+            "image_format": "图像格式",
         }
         
         return translations.get(field_name, field_name)

@@ -1166,3 +1166,169 @@ def preprocess_image(self, image, fast_mode=True):
 - Keep fallback methods as backup
 - Log which algorithm was used (for debugging)
 - Document algorithm selection strategy in code comments
+
+---
+
+### 34. Barcode Recognition Result Display Issue
+
+**Problem**: Barcode recognition tool results not displaying or displaying abnormally in result panel.
+
+**Symptom**:
+- Barcode recognition tool executes but result panel shows nothing
+- Or results displayed incorrectly
+- Data selector cannot access barcode data fields
+
+**Root Cause**:
+1. Missing `tool_name` and `result_category` settings in ResultData
+2. Using `barcodes` field name but result panel expects `codes` field
+3. Wrong `result_category` value ("recognition" instead of "barcode")
+
+**Solution**:
+```python
+# In tools/vision/recognition.py
+self._result_data = ResultData()
+self._result_data.tool_name = self._name
+self._result_data.result_category = "barcode"  # Must match panel expectations
+
+# Use 'codes' field to match result panel
+self._result_data.set_value("codes", results)
+# Keep 'barcodes' for backward compatibility
+self._result_data.set_value("barcodes", results)
+```
+
+**Key Points**:
+1. Always set `tool_name` and `result_category` when creating ResultData
+2. Use field names that match result panel expectations
+3. Check `enhanced_result_panel.py` for expected field names and categories
+
+---
+
+### 35. Result Panel Not Synchronized When Deleting Tools
+
+**Problem**: After deleting a tool from algorithm editor, its results remain in result panel.
+
+**Symptom**:
+- Delete a tool from algorithm editor
+- Result panel still shows the deleted tool's results
+- Results accumulate over time
+
+**Root Cause**:
+- Adding results uses `tool.name` (instance name like "Barcode_1")
+- Removing results uses `tool.tool_name` (type name like "Barcode")
+- Name mismatch prevents proper removal
+
+**Solution**:
+```python
+# In ui/main_window.py remove_tool method
+# Use tool.name (instance name) not tool.tool_name (type name)
+self.result_dock.remove_result_by_tool_name(tool.name)
+```
+
+**Key Points**:
+1. Use consistent naming when adding and removing results
+2. Instance name (`tool.name`) is preferred to distinguish multiple tools of same type
+3. Add comments explaining the naming choice
+
+---
+
+### 36. Missing Result Data in Algorithm Tools
+
+**Problem**: Many algorithm tools lack proper ResultData initialization.
+
+**Symptom**:
+- Tools execute but don't show results in result panel
+- Data selector shows no available data from these tools
+- Inconsistent behavior across different tool types
+
+**Affected Tools**:
+- OCR tools (ChineseOCR, EnglishOCR)
+- Appearance detection
+- Calibration
+- Geometric transform
+- Image saver
+
+**Root Cause**:
+- Tools create `_result_data` but don't set `tool_name` and `result_category`
+- Some tools don't create `_result_data` at all
+- Result panel cannot categorize and display results properly
+
+**Solution**:
+```python
+# Standard pattern for all tools
+self._result_data = ResultData()
+self._result_data.tool_name = self._name
+self._result_data.result_category = "appropriate_category"
+# Then set tool-specific values
+self._result_data.set_value("key", value)
+```
+
+**Categories by Tool Type**:
+- Barcode: "barcode"
+- QR Code: "qrcode"
+- OCR: "ocr"
+- Detection: "detection"
+- Calibration: "calibration"
+- Matching: "match"
+- Transform: "transform"
+- Saver: "saver"
+
+---
+
+### 37. Barcode Result Data Structure Optimization
+
+**Problem**: Barcode results stored as nested list, making it hard to select individual fields.
+
+**Symptom**:
+- Data shows as `[{'data': '123', 'type': 'EAN13', ...}]` in selector
+- Cannot easily select just the barcode data or type
+- Sending data requires complex parsing
+
+**Solution**:
+```python
+# Split first barcode result into separate fields
+if results:
+    first_code = results[0]
+    self._result_data.set_value("code_data", first_code.get("data", ""))
+    self._result_data.set_value("code_type", first_code.get("type", ""))
+    rect = first_code.get("rect", {})
+    self._result_data.set_value("code_x", rect.get("x", 0))
+    self._result_data.set_value("code_y", rect.get("y", 0))
+    self._result_data.set_value("code_width", rect.get("width", 0))
+    self._result_data.set_value("code_height", rect.get("height", 0))
+```
+
+**Benefits**:
+1. Users can select specific fields (data, type, position)
+2. Easier to send individual values via communication tools
+3. Better integration with data extraction rules
+
+---
+
+### 38. Data Selector Field Name Translation
+
+**Problem**: Data selector shows English field names instead of Chinese.
+
+**Symptom**:
+- Field names like "code_data", "stitched_width" shown in English
+- Users cannot understand what each field represents
+- Poor user experience for Chinese users
+
+**Solution**:
+```python
+# In ui/data_selector.py _translate_field_name method
+translations = {
+    # Barcode fields
+    "code_data": "码值内容",
+    "code_type": "码类型",
+    "code_x": "码X坐标",
+    "code_y": "码Y坐标",
+    "code_width": "码宽度",
+    "code_height": "码高度",
+    # Add translations for all tool-specific fields
+}
+```
+
+**Key Points**:
+1. Maintain translation dictionary for all exposed fields
+2. Use descriptive Chinese names
+3. Keep English field name in parentheses for reference
