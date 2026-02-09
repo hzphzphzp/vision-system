@@ -15,18 +15,10 @@
 
 | 文档 | 说明 | 类别 |
 |------|------|------|
-| [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) | 项目综合文档 | 综合 |
-| [ERROR_HANDLING_GUIDE.md](ERROR_HANDLING_GUIDE.md) | 错误处理和异常管理 | 开发 |
+| [ERROR_HANDLING_GUIDE.md](ERROR_HANDLING_GUIDE.md) | 错误处理和异常管理（含开发错误记录） | 开发 |
 | [PROJECT_OPTIMIZATION_GUIDE.md](PROJECT_OPTIMIZATION_GUIDE.md) | 项目优化指南 | 开发 |
+| [MULTI_IMAGE_SELECTOR.md](MULTI_IMAGE_SELECTOR.md) | 多图像选择器工具使用说明 | 工具 |
 | [tools/vision/CALIBRATION.md](../tools/vision/CALIBRATION.md) | 标定工具使用指南 | 工具 |
-
-## 工具文档
-
-| 文档 | 说明 |
-|------|------|
-| [tools/vision/calibration.py](../tools/vision/calibration.py) | 标定工具源代码 |
-| [tools/vision/CALIBRATION.md](../tools/vision/CALIBRATION.md) | 标定工具使用指南 |
-| [tests/test_calibration.py](../tests/test_calibration.py) | 标定工具测试 |
 
 ## 参考文档
 
@@ -38,9 +30,11 @@
 
 ## 归档文档
 
-| 文档 | 说明 | 说明 |
-|------|------|------|
-| [archives/performance_optimization_summary.md](archives/performance_optimization_summary.md) | Polars性能优化 | 已归档 |
+| 文档 | 说明 | 归档时间 |
+|------|------|----------|
+| [archives/performance_optimization_summary.md](archives/performance_optimization_summary.md) | Polars性能优化 | 2026-01 |
+| [archives/TECHNICAL_DOCUMENT.md](archives/TECHNICAL_DOCUMENT.md) | 旧版技术文档（已合并） | 2026-02-09 |
+| [archives/PROJECT_DOCUMENTATION.md](archives/PROJECT_DOCUMENTATION.md) | 旧版项目文档（已合并） | 2026-02-09 |
 
 ## 计划文档
 
