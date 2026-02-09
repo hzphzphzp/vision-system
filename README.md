@@ -297,47 +297,50 @@ tool_params = {
 
 ## 📝 更新日志
 
-### 2026-02-09 - 多图像选择器与文档优化
+### 2026-02-09 - 多图像选择器、条码识别与结果面板优化
 
-- ✅ **新增多图像选择器工具**
+#### 🚀 新增功能
+- **多图像选择器工具**
   - 支持加载多张图片，一次性选择多文件
   - 提供上一张/下一张/跳转切换功能
   - 切换图片后自动运行流程
   - 循环模式支持
   - 完整中文参数界面
 
-- ✅ **Bug修复**
+- **条码识别结果优化**
+  - 将条码结果拆分为单独字段（code_data、code_type、code_x、code_y、code_width、code_height）
+  - 支持在数据选择器中自由选择需要发送的特定字段
+
+#### 🔧 优化改进
+- **算法工具结果数据完善**
+  - 为OCR、外观检测、标定、几何变换、图像保存等工具添加缺失的tool_name和result_category
+  - 确保所有工具的结果都能正确显示在结果面板中
+
+- **数据选择器字段翻译**
+  - 添加条码、二维码、OCR、外观检测、标定等工具字段的中文翻译
+  - 提升中文用户体验
+
+#### 🐛 Bug修复
+- **结果面板同步修复**
+  - 修复删除算法模块后结果面板未同步的问题
+  - 统一使用tool.name（实例名称）来添加和删除结果
+
+- **条码识别结果显示异常**
+  - 修复条码识别工具执行后结果面板不显示或显示异常的问题
+
+- **日志与参数修复**
   - 修复日志记录中 filename 与 LogRecord 冲突问题
   - 修复 result_panel 日志 extra 参数冲突
   - 修复多图像选择器参数同步问题
   - 修复回调函数参数传递问题
 
-- ✅ **文档更新**
-  - 新增 TECHNICAL_DOCUMENTATION.md 综合技术文档
-  - 新增 MULTI_IMAGE_SELECTOR.md 多图像选择器使用说明
-  - 合并 TECHNICAL_DOCUMENT.md + PROJECT_DOCUMENTATION.md
-  - 合并 ERROR_RECORD.md → ERROR_HANDLING_GUIDE.md
-  - 更新 INDEX.md 文档索引和导航
-  - 更新 AGENTS.md 添加 3 个新错误记录 (#34-36)
-
-### 2026-02-09 - 条码识别与结果面板优化
-
-- ✅ **条码识别结果优化**
-  - 将条码结果拆分为单独字段（code_data、code_type、code_x、code_y、code_width、code_height）
-  - 支持在数据选择器中自由选择需要发送的特定字段
-  - 修复条码识别结果显示异常问题
-
-- ✅ **算法工具结果数据完善**
-  - 为OCR、外观检测、标定、几何变换、图像保存等工具添加缺失的tool_name和result_category
-  - 确保所有工具的结果都能正确显示在结果面板中
-
-- ✅ **结果面板同步修复**
-  - 修复删除算法模块后结果面板未同步的问题
-  - 统一使用tool.name（实例名称）来添加和删除结果
-
-- ✅ **数据选择器字段翻译**
-  - 添加条码、二维码、OCR、外观检测、标定等工具字段的中文翻译
-  - 提升中文用户体验
+#### 📝 文档更新
+- 新增 TECHNICAL_DOCUMENTATION.md 综合技术文档
+- 新增 MULTI_IMAGE_SELECTOR.md 多图像选择器使用说明
+- 合并 TECHNICAL_DOCUMENT.md + PROJECT_DOCUMENTATION.md
+- 合并 ERROR_RECORD.md → ERROR_HANDLING_GUIDE.md
+- 更新 INDEX.md 文档索引和导航
+- 更新 AGENTS.md 添加 5 个新错误记录 (#34-38)
 
 ### 2026-02-06 - 图像拼接优化
 
