@@ -297,6 +297,29 @@ tool_params = {
 
 ## 📝 更新日志
 
+### 2026-02-09 - 多图像选择器与文档优化
+
+- ✅ **新增多图像选择器工具**
+  - 支持加载多张图片，一次性选择多文件
+  - 提供上一张/下一张/跳转切换功能
+  - 切换图片后自动运行流程
+  - 循环模式支持
+  - 完整中文参数界面
+
+- ✅ **Bug修复**
+  - 修复日志记录中 filename 与 LogRecord 冲突问题
+  - 修复 result_panel 日志 extra 参数冲突
+  - 修复多图像选择器参数同步问题
+  - 修复回调函数参数传递问题
+
+- ✅ **文档更新**
+  - 新增 TECHNICAL_DOCUMENTATION.md 综合技术文档
+  - 新增 MULTI_IMAGE_SELECTOR.md 多图像选择器使用说明
+  - 合并 TECHNICAL_DOCUMENT.md + PROJECT_DOCUMENTATION.md
+  - 合并 ERROR_RECORD.md → ERROR_HANDLING_GUIDE.md
+  - 更新 INDEX.md 文档索引和导航
+  - 更新 AGENTS.md 添加 3 个新错误记录 (#34-36)
+
 ### 2026-02-06 - 图像拼接优化
 
 - ✅ **性能提升17倍**
