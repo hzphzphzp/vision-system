@@ -12,8 +12,13 @@ Date: 2026-01-29
 import os
 import sys
 
+import pytest
+
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# 标记为GUI测试
+pytestmark = pytest.mark.gui
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication

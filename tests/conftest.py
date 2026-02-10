@@ -15,6 +15,54 @@ import pytest
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# 检测是否运行在GUI环境
+import os
+RUNNING_IN_CI = os.environ.get('CI', 'false').lower() == 'true'
+RUNNING_IN_HEADLESS = os.environ.get('DISPLAY', '') == '' and sys.platform != 'win32'
+HAS_QT = False
+
+try:
+    # 尝试导入Qt，但不初始化QApplication
+    from PyQt5.QtCore import QT_VERSION_STR
+    HAS_QT = True
+except ImportError:
+    pass
+
+# 定义测试标记
+def pytest_configure(config):
+    """配置pytest"""
+    config.addinivalue_line("markers", "gui: 标记需要GUI的测试")
+    config.addinivalue_line("markers", "slow: 标记运行缓慢的测试")
+    config.addinivalue_line("markers", "integration: 标记集成测试")
+    config.addinivalue_line("markers", "unit: 标记单元测试")
+
+
+def pytest_collection_modifyitems(config, items):
+    """修改测试项，跳过不需要的测试"""
+    skip_gui = pytest.mark.skip(reason="跳过GUI测试（使用 --gui 启用）")
+    skip_slow = pytest.mark.skip(reason="跳过慢速测试（使用 --runslow 启用）")
+    
+    for item in items:
+        # 如果没有指定--gui选项，跳过GUI测试
+        if "gui" in item.keywords and not config.getoption("--gui"):
+            item.add_marker(skip_gui)
+        
+        # 如果没有指定--runslow选项，跳过慢速测试
+        if "slow" in item.keywords and not config.getoption("--runslow"):
+            item.add_marker(skip_slow)
+
+
+def pytest_addoption(parser):
+    """添加命令行选项"""
+    parser.addoption(
+        "--gui", action="store_true", default=False, help="运行GUI测试"
+    )
+    parser.addoption(
+        "--runslow", action="store_true", default=False, help="运行慢速测试"
+    )
+
+
+# 安全导入ImageData，避免GUI初始化
 from data.image_data import ImageData
 
 

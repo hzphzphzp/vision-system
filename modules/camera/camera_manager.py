@@ -777,3 +777,10 @@ class CameraManager:
 
         camera = self.get_camera(final_camera_id)
         return camera is not None and camera.is_connected
+
+    def __del__(self):
+        """析构函数 - 清理所有相机资源"""
+        try:
+            self.shutdown()
+        except:
+            pass

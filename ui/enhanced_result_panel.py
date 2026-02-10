@@ -822,6 +822,7 @@ class EnhancedResultPanel(QWidget):
         self._results: List[Tuple[ResultData, str, float]] = (
             []
         )  # (数据, 类别, 时间戳)
+        self._max_results = 500  # 最大结果数量限制
         self._available_modules: Dict[str, Dict[str, DataType]] = {}
 
         self._init_ui()
@@ -949,8 +950,8 @@ class EnhancedResultPanel(QWidget):
             self._logger.debug(f"添加新模块结果: {tool_name}")
 
         # 限制数量
-        if len(self._results) > 500:
-            self._results = self._results[-500:]
+        if len(self._results) > self._max_results:
+            self._results = self._results[-self._max_results:]
 
         self._update_result_list()
         self._update_available_modules()

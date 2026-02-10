@@ -501,7 +501,7 @@ class AlgorithmView(QGraphicsView):
 
         self.centerOn(0, 0)
 
-        self._logger.info("[VIEW] AlgorithmView 初始化完成，接受拖拽: True")
+        self._logger.debug("[VIEW] AlgorithmView 初始化完成，接受拖拽: True")
 
     def dragEnterEvent(self, event):
         """拖拽进入事件"""
@@ -534,7 +534,7 @@ class AlgorithmView(QGraphicsView):
             event.accept()
             # 只在第一次时记录，避免日志过多
             if not hasattr(self, "_drag_move_logged"):
-                self._logger.info("[VIEW] 拖拽移动中...")
+                self._logger.debug("[VIEW] 拖拽移动中...")
                 self._drag_move_logged = True
         else:
             event.ignore()
@@ -562,7 +562,7 @@ class AlgorithmView(QGraphicsView):
                 )
                 parts = tool_data.split("|")
 
-                self._logger.info(f"[VIEW] 解析工具数据: {tool_data}")
+                self._logger.debug(f"[VIEW] 解析工具数据: {tool_data}")
                 self._logger.info(f"[VIEW] 分割结果: {parts}")
 
                 if len(parts) >= 3:
@@ -1344,10 +1344,10 @@ class MainWindow(QMainWindow):
         self.current_display_image = None
         self.current_display_tool_name = None
 
-        # 图像缓存（避免重复处理）
-        self._image_cache = (
-            {}
-        )  # {tool_name: (image_data_hash, qimage, qpixmap)}
+        # 图像缓存（避免重复处理，带LRU淘汰策略）
+        self._image_cache = {}
+        self._image_cache_access_order = []
+        self._image_cache_max_size = 20
 
         # 图像视图状态管理
         self._view_scale = 1.0  # 视图缩放比例
@@ -1983,10 +1983,32 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """关闭窗口事件"""
+        # 停止连续运行
+        if hasattr(self, "_continuous_running") and self._continuous_running:
+            self.stop_run()
+        
         # 停止热重载
         if hasattr(self, "hot_reload_manager") and self.hot_reload_manager:
             self.hot_reload_manager.stop()
             self._logger.info("热重载功能已停止")
+        
+        # 清理回调函数
+        if hasattr(self, "hot_reload_manager") and self.hot_reload_manager:
+            self.hot_reload_manager.clear_reload_callbacks()
+        
+        # 清理通讯组件
+        if hasattr(self, "_comm_config_widget") and self._comm_config_widget:
+            try:
+                self._comm_config_widget.cleanup()
+            except:
+                pass
+        
+        # 清理结果
+        if hasattr(self, "result_dock") and self.result_dock:
+            try:
+                self.result_dock.clear_results()
+            except:
+                pass
 
         # 调用父类方法
         super().closeEvent(event)
@@ -2236,6 +2258,9 @@ class MainWindow(QMainWindow):
         # 清理图像缓存
         if tool.tool_name in self._image_cache:
             del self._image_cache[tool.tool_name]
+            # 同时从访问顺序列表中移除
+            if tool.tool_name in self._image_cache_access_order:
+                self._image_cache_access_order.remove(tool.tool_name)
             self._logger.info(f"[MAIN] 从图像缓存中移除工具: {tool.tool_name}")
 
         # 从结果面板中移除该模块的结果
@@ -3491,7 +3516,30 @@ class MainWindow(QMainWindow):
         # 加载新流程的工具到算法编辑器
         if procedure and hasattr(procedure, '_tools'):
             for tool_name, tool in procedure._tools.items():
-                self._create_tool_on_editor(tool, QPointF(200, 200))
+                # 使用工具保存的位置，如果没有则使用默认位置
+                if hasattr(tool, 'position') and tool.position:
+                    x = tool.position.get('x', 200)
+                    y = tool.position.get('y', 200)
+                else:
+                    x, y = 200, 200
+                self._add_tool_to_scene(tool, x, y)
+        
+        # 恢复流程中的连接
+        if procedure and hasattr(procedure, 'connections'):
+            for connection in procedure.connections:
+                from_tool_name = connection.from_tool
+                to_tool_name = connection.to_tool
+                if from_tool_name in self.tool_items and to_tool_name in self.tool_items:
+                    from_item = self.tool_items[from_tool_name]
+                    to_item = self.tool_items[to_tool_name]
+                    # 创建连接线
+                    from_port = from_item.output_port
+                    to_port = to_item.input_port
+                    if from_port and to_port:
+                        line = ConnectionLine(from_port, to_port)
+                        self.algorithm_scene.addItem(line)
+                        self.connection_items[(from_tool_name, to_tool_name)] = line
+                        self._logger.debug(f"恢复连接: {from_tool_name} -> {to_tool_name}")
         
         # 刷新项目树
         self.project_dock.refresh()
@@ -3790,8 +3838,61 @@ class MainWindow(QMainWindow):
             self._logger.error(f"显示相机设置失败: {e}")
             QMessageBox.warning(self, "错误", f"显示相机设置失败: {str(e)}")
 
+    def _has_solution_changes(self) -> bool:
+        """检查当前方案是否有未保存的修改
+        
+        检查条件：
+        1. 方案是否有保存路径（新方案）
+        2. 方案中是否有流程或工具
+        
+        Returns:
+            True - 有未保存的修改
+            False - 没有修改或方案为空
+        """
+        # 如果没有方案对象，返回 False
+        if not hasattr(self, 'solution') or not self.solution:
+            return False
+        
+        # 检查方案是否有流程
+        if hasattr(self.solution, 'procedures') and self.solution.procedures:
+            # 检查是否有工具
+            for procedure in self.solution.procedures:
+                if hasattr(procedure, 'tools') and procedure.tools:
+                    # 有流程且有工具，说明有内容
+                    return True
+                if hasattr(procedure, 'connections') and procedure.connections:
+                    # 有连接也算有内容
+                    return True
+        
+        # 检查是否有未保存的修改（如果有保存路径则假设已保存）
+        if hasattr(self.solution, 'solution_path') and self.solution.solution_path:
+            # 有保存路径，但这里可以添加更详细的 dirty 检查
+            # 暂时认为有路径就是已保存的
+            pass
+        
+        return False
+
     def open_solution(self):
         """打开方案"""
+        # 检查当前方案是否有修改
+        if self._has_solution_changes():
+            # 弹出确认对话框
+            reply = QMessageBox.question(
+                self,
+                "保存确认",
+                "当前方案有未保存的修改，是否保存？",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            
+            if reply == QMessageBox.Save:
+                # 保存当前方案
+                self.save_solution()
+            elif reply == QMessageBox.Cancel:
+                # 取消操作
+                return
+            # Discard: 不保存，继续打开新方案
+        
         file_path, _ = QFileDialog.getOpenFileName(
             self, "打开方案", "", "方案文件 (*.vmsol);;所有文件 (*.*)"
         )
@@ -4243,6 +4344,12 @@ class MainWindow(QMainWindow):
         # 停止定时器
         if hasattr(self, "_continuous_timer"):
             self._continuous_timer.stop()
+            # 断开信号连接，避免内存泄漏
+            try:
+                self._continuous_timer.timeout.disconnect(self._on_continuous_timer)
+            except TypeError:
+                # 信号可能已断开
+                pass
             delattr(self, "_continuous_timer")
 
         self.update_status("连续运行已停止")

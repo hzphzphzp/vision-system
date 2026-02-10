@@ -146,7 +146,30 @@ class HotReloadManager:
         Args:
             callback: 重载时的回调函数
         """
-        self.reload_callbacks.append(callback)
+        # 防止重复添加
+        if callback not in self.reload_callbacks:
+            self.reload_callbacks.append(callback)
+        
+        # 限制回调数量，防止内存泄漏
+        max_callbacks = 50
+        if len(self.reload_callbacks) > max_callbacks:
+            # 移除最旧的回调
+            removed = self.reload_callbacks.pop(0)
+            print(f"[热重载] 回调数量超过限制，移除旧回调: {removed}")
+
+    def remove_reload_callback(self, callback: Callable):
+        """
+        移除重载回调函数
+
+        Args:
+            callback: 要移除的回调函数
+        """
+        if callback in self.reload_callbacks:
+            self.reload_callbacks.remove(callback)
+
+    def clear_reload_callbacks(self):
+        """清除所有重载回调函数"""
+        self.reload_callbacks.clear()
 
     def start(self):
         """启动热重载监控"""

@@ -132,14 +132,14 @@ class SendDataTool(ToolBase):
         # 初始化时设置空列表或默认值，避免卡顿
         if not current_connection:
             self._logger.info(f"【_init_params】目标连接为空，设置默认值（延迟加载连接列表）")
-            self.set_param("目标连接", "",
+            self.set_param("目标连接", "-- 请选择连接 --",
                           param_type="enum",
-                          options=["点击刷新获取连接列表"],
-                          description="选择要发送数据的通讯连接（点击下拉框刷新）")
+                          options=["-- 请选择连接 --"],
+                          description="选择要发送数据的通讯连接（点击下拉框查看可用连接）")
         else:
             # 只更新选项列表，不覆盖值（延迟加载）
             self._logger.info(f"【_init_params】目标连接不为空，延迟加载选项列表")
-            self._params[f"__options_目标连接"] = ["点击刷新获取连接列表"]
+            self._params[f"__options_目标连接"] = ["-- 请选择连接 --"]
         
         self._logger.info(f"【_init_params】初始化完成，目标连接值: '{self._params.get('目标连接', '')}'")
 
@@ -174,13 +174,20 @@ class SendDataTool(ToolBase):
         
         if key == "目标连接":
             # 检查是否需要刷新连接列表
-            # 当选择"点击刷新获取连接列表"或"暂无可用连接"时，刷新列表
-            if new_value in ["点击刷新获取连接列表", "暂无可用连接"] or old_value == "点击刷新获取连接列表":
-                self._logger.info(f"【_on_param_changed】刷新连接列表，新值: '{new_value}', 旧值: '{old_value}'")
+            # 当选择提示选项时，刷新列表获取真实连接
+            prompt_options = ["-- 请选择连接 --", "-- 暂无可用连接 --", "-- 刷新失败，请重试 --"]
+            if new_value in prompt_options:
+                self._logger.info(f"【_on_param_changed】用户点击提示选项，刷新连接列表，新值: '{new_value}'")
                 self._refresh_connection_options()
     
     def _refresh_connection_options(self):
         """刷新连接列表选项"""
+        # 防止递归调用
+        if hasattr(self, '_refreshing_connections') and self._refreshing_connections:
+            self._logger.debug("【_refresh_connection_options】已经在刷新中，跳过")
+            return
+        
+        self._refreshing_connections = True
         try:
             self._logger.info("【_refresh_connection_options】开始刷新连接列表...")
             
@@ -193,19 +200,30 @@ class SendDataTool(ToolBase):
             self._logger.info(f"【_refresh_connection_options】获取到 {len(available_connections)} 个连接")
             
             if available_connections:
-                self._params["__options_目标连接"] = available_connections
-                # 自动选择第一个可用连接
-                first_connection = available_connections[0]
-                self.set_param("目标连接", first_connection)
-                self._logger.info(f"【_refresh_connection_options】自动选择第一个连接: {first_connection}")
+                # 添加提示选项作为第一项
+                options = ["-- 请选择连接 --"] + available_connections
+                self._params["__options_目标连接"] = options
+                
+                # 获取当前选择
+                current_connection = self._params.get("目标连接", "")
+                
+                # 如果当前选择无效（为空或不在列表中），设置为提示选项
+                # 注意：这里直接修改 _params 而不是调用 set_param，避免触发递归
+                if not current_connection or current_connection not in available_connections:
+                    self._params["目标连接"] = "-- 请选择连接 --"
+                    self._logger.info(f"【_refresh_connection_options】用户需要手动选择连接")
+                else:
+                    self._logger.info(f"【_refresh_connection_options】保持当前选择: {current_connection}")
             else:
-                self._params["__options_目标连接"] = ["暂无可用连接"]
-                # 清空当前选择
-                self.set_param("目标连接", "")
+                self._params["__options_目标连接"] = ["-- 暂无可用连接 --"]
+                self._params["目标连接"] = "-- 暂无可用连接 --"
                 self._logger.warning("【_refresh_connection_options】没有可用的连接")
         except Exception as e:
             self._logger.error(f"【_refresh_connection_options】刷新连接列表失败: {e}", exc_info=True)
-            self._params["__options_目标连接"] = ["刷新失败，请重试"]
+            self._params["__options_目标连接"] = ["-- 刷新失败，请重试 --"]
+            self._params["目标连接"] = "-- 刷新失败，请重试 --"
+        finally:
+            self._refreshing_connections = False
     
     def _update_data_content_options(self):
         """根据上游数据更新数据内容选项"""
@@ -504,7 +522,9 @@ class SendDataTool(ToolBase):
                 self._logger.info(f"【调试】使用get_param获取: '{connection_id}'")
             
             # 检查是否是提示文本，如果是则自动刷新
-            if connection_id in ["点击刷新获取连接列表", "暂无可用连接", "刷新失败，请重试"]:
+            prompt_options = ["-- 请选择连接 --", "-- 暂无可用连接 --", "-- 刷新失败，请重试 --",
+                            "点击刷新获取连接列表", "暂无可用连接", "刷新失败，请重试"]
+            if connection_id in prompt_options:
                 self._logger.info(f"【调试】当前选择的是提示文本 '{connection_id}'，自动刷新连接列表")
                 self._refresh_connection_options()
                 # 重新获取连接ID
@@ -515,7 +535,7 @@ class SendDataTool(ToolBase):
             self._logger.info(f"【调试】最终目标连接类型: {type(connection_id)}")
             self._logger.info(f"【调试】最终目标连接长度: {len(str(connection_id)) if connection_id else 0}")
             
-            if not connection_id or connection_id in ["点击刷新获取连接列表", "暂无可用连接", "刷新失败，请重试"]:
+            if not connection_id or connection_id in prompt_options:
                 self._logger.error("未选择有效的连接")
                 self._logger.error(f"可用参数: {list(all_params.keys())}")
                 return {
@@ -945,13 +965,13 @@ class ReceiveDataTool(ToolBase):
         current_connection = self._params.get("连接ID", "")
         # 延迟加载：初始化时设置提示选项
         if not current_connection:
-            self.set_param("连接ID", "",
+            self.set_param("连接ID", "-- 请选择连接 --",
                           param_type="enum",
-                          options=["点击刷新获取连接列表"],
-                          description="选择已有的通讯连接ID（点击下拉框刷新）")
+                          options=["-- 请选择连接 --"],
+                          description="选择已有的通讯连接ID（点击下拉框查看可用连接）")
         else:
             # 只更新选项列表，不覆盖值（延迟加载）
-            self._params[f"__options_连接ID"] = ["点击刷新获取连接列表"]
+            self._params[f"__options_连接ID"] = ["-- 请选择连接 --"]
 
         # 接收配置 - 只在不存在时设置默认值
         if "输出格式" not in self._params:
@@ -981,23 +1001,49 @@ class ReceiveDataTool(ToolBase):
         
         if key == "连接ID":
             # 检查是否需要刷新连接列表
-            if new_value == "点击刷新获取连接列表" or old_value == "点击刷新获取连接列表":
-                self._logger.info("【_on_param_changed】刷新连接列表")
+            # 当选择提示选项时，刷新列表获取真实连接
+            prompt_options = ["-- 请选择连接 --", "-- 暂无可用连接 --", "-- 刷新失败，请重试 --"]
+            if new_value in prompt_options:
+                self._logger.info(f"【_on_param_changed】用户点击提示选项，刷新连接列表，新值: '{new_value}'")
                 self._refresh_connection_options()
     
     def _refresh_connection_options(self):
         """刷新连接列表选项"""
+        # 防止递归调用
+        if hasattr(self, '_refreshing_connections') and self._refreshing_connections:
+            self._logger.debug("【_refresh_connection_options】已经在刷新中，跳过")
+            return
+        
+        self._refreshing_connections = True
         try:
             available_connections = self._get_available_connections()
             self._logger.info(f"【_refresh_connection_options】获取到 {len(available_connections)} 个连接")
             
             if available_connections:
-                self._params["__options_连接ID"] = available_connections
+                # 添加提示选项作为第一项
+                options = ["-- 请选择连接 --"] + available_connections
+                self._params["__options_连接ID"] = options
+                
+                # 获取当前选择
+                current_connection = self._params.get("连接ID", "")
+                
+                # 如果当前选择无效（为空或不在列表中），设置为提示选项
+                # 注意：这里直接修改 _params 而不是调用 set_param，避免触发递归
+                if not current_connection or current_connection not in available_connections:
+                    self._params["连接ID"] = "-- 请选择连接 --"
+                    self._logger.info(f"【_refresh_connection_options】用户需要手动选择连接")
+                else:
+                    self._logger.info(f"【_refresh_connection_options】保持当前选择: {current_connection}")
             else:
-                self._params["__options_连接ID"] = ["暂无可用连接"]
+                self._params["__options_连接ID"] = ["-- 暂无可用连接 --"]
+                self._params["连接ID"] = "-- 暂无可用连接 --"
+                self._logger.warning("【_refresh_connection_options】没有可用的连接")
         except Exception as e:
             self._logger.error(f"【_refresh_connection_options】刷新连接列表失败: {e}")
-            self._params["__options_连接ID"] = ["刷新失败，请重试"]
+            self._params["__options_连接ID"] = ["-- 刷新失败，请重试 --"]
+            self._params["连接ID"] = "-- 刷新失败，请重试 --"
+        finally:
+            self._refreshing_connections = False
 
     def set_param(self, key: str, value: Any, **kwargs):
         """设置参数，特殊处理数据提取规则"""
@@ -1139,12 +1185,15 @@ class ReceiveDataTool(ToolBase):
             self._logger.debug(f"连接ID类型: {type(connection_id)}")
             self._logger.debug(f"连接ID长度: {len(connection_id) if connection_id else 0}")
             
-            if not connection_id:
-                self._logger.error("未选择通讯连接")
+            # 检查是否是提示文本
+            prompt_options = ["-- 请选择连接 --", "-- 暂无可用连接 --", "-- 刷新失败，请重试 --",
+                            "点击刷新获取连接列表", "暂无可用连接", "刷新失败，请重试"]
+            if not connection_id or connection_id in prompt_options:
+                self._logger.error("未选择有效的通讯连接")
                 self._logger.error(f"可用参数: {list(all_params.keys())}")
                 return {
                     "status": False,
-                    "message": "未选择通讯连接，请在属性面板中选择已建立的连接",
+                    "message": "未选择有效的通讯连接，请在属性面板下拉框中选择一个连接",
                     "接收成功次数": self._receive_count,
                     "接收失败次数": self._fail_count
                 }
