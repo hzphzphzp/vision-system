@@ -21,6 +21,8 @@ import math
 import os
 import sys
 
+logger = logging.getLogger(__name__)
+
 # 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -38,7 +40,7 @@ try:
     HOT_RELOAD_AVAILABLE = True
 except ImportError:
     HOT_RELOAD_AVAILABLE = False
-    print("[警告] 热重载功能不可用，请安装 watchdog 库")
+    logger.warning("热重载功能不可用，请安装 watchdog 库")
 
 PYQT_VERSION = 5
 
@@ -216,16 +218,22 @@ from ui.communication_dialog import (
     CommunicationConfigDialog,
     CommunicationMonitorWidget,
 )
-from ui.cpu_optimization_dialog import (
-    CPUOptimizationDialog,
-    PerformanceMonitorWidget,
-)
 from ui.enhanced_result_dock import EnhancedResultDockWidget
 from ui.project_browser import ProjectBrowserDockWidget
 from ui.property_panel import PropertyDockWidget
 from ui.result_panel import ResultDockWidget, ResultType
 from ui.theme import apply_theme, get_style
 from ui.tool_library import ToolLibraryDockWidget
+
+
+# 延迟导入CPU优化对话框（避免启动时加载重量级模块）
+def _get_cpu_optimization_dialog():
+    """获取CPU优化对话框（延迟导入）"""
+    from ui.cpu_optimization_dialog import (
+        CPUOptimizationDialog,
+        PerformanceMonitorWidget,
+    )
+    return CPUOptimizationDialog, PerformanceMonitorWidget
 
 
 class ConnectionLine(QGraphicsLineItem):
@@ -1049,12 +1057,12 @@ class GraphicsToolItem(QGraphicsRectItem):
 
     def mouseDoubleClickEvent(self, event):
         """双击编辑工具属性"""
-        # 简单实现：打印工具信息
-        print(f"双击工具: {self.tool.tool_name}")
+        # 记录工具信息
+        self._logger.info(f"双击工具: {self.tool.tool_name}")
         params = self.tool.get_param_with_details()
-        print("工具参数:")
+        self._logger.info("工具参数:")
         for name, info in params.items():
-            print(f"  {name}: {info['value']} ({info['description']})")
+            self._logger.info(f"  {name}: {info['value']} ({info['description']})")
 
     def _create_ports(self):
         """创建输入输出端口"""
@@ -2000,14 +2008,14 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_comm_config_widget") and self._comm_config_widget:
             try:
                 self._comm_config_widget.cleanup()
-            except:
+            except Exception:
                 pass
-        
+
         # 清理结果
         if hasattr(self, "result_dock") and self.result_dock:
             try:
                 self.result_dock.clear_results()
-            except:
+            except Exception:
                 pass
 
         # 调用父类方法
@@ -4084,6 +4092,15 @@ class MainWindow(QMainWindow):
 
                 self._logger.info(f"[RUN] {tool.tool_name} 执行完成")
 
+                # 如果是图像切片工具且启用了运行后递增，刷新属性面板以显示更新后的索引
+                if hasattr(tool, 'tool_name') and tool.tool_name == "图像切片":
+                    self._logger.debug(f"刷新图像切片工具的属性面板")
+                    try:
+                        new_index = tool.get_param("结果索引", 0)
+                        self.property_dock.update_parameter("结果索引", new_index)
+                    except Exception as e:
+                        self._logger.warning(f"刷新属性面板失败: {e}")
+
             # 显示结果
             results = {self.current_procedure.name: {}}
             for tool in execution_order:
@@ -4455,6 +4472,7 @@ class MainWindow(QMainWindow):
                 not hasattr(self, "_cpu_optimize_dialog")
                 or self._cpu_optimize_dialog is None
             ):
+                CPUOptimizationDialog, _ = _get_cpu_optimization_dialog()
                 self._cpu_optimize_dialog = CPUOptimizationDialog(self)
 
             self._cpu_optimize_dialog.show()
@@ -4475,6 +4493,7 @@ class MainWindow(QMainWindow):
                 not hasattr(self, "_perf_monitor_widget")
                 or self._perf_monitor_widget is None
             ):
+                _, PerformanceMonitorWidget = _get_cpu_optimization_dialog()
                 self._perf_monitor_widget = PerformanceMonitorWidget(self)
 
                 self._perf_monitor_dock = QDockWidget("性能监控", self)

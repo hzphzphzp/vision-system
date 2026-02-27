@@ -5,6 +5,91 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布] - 2026-02-27
+
+### 🚀 新增功能
+
+- **图像切片工具 (ImageSliceTool)**
+  - 对匹配目标进行精确切片处理
+  - 支持从上游工具（如灰度匹配）获取匹配结果
+  - 支持两种切片模式：提取（保留区域）/去除（删除区域）
+  - 支持多结果浏览，通过"结果索引"切换
+  - 新增"运行后递增"功能，每次运行自动切换到下一个结果
+  - 文件: `tools/vision/image_slice.py`, `ui/tool_library.py`
+
+- **属性面板自动刷新**
+  - 图像切片工具运行后自动刷新属性面板显示更新后的索引
+  - 文件: `ui/main_window.py`
+
+### 🐛 错误修复
+
+- **工具注册问题**
+  - 修复新建工具未注册到系统的问题
+  - 原因: 未在 `tools/vision/__init__.py` 中导入新工具
+
+- **参数定义错误**
+  - 修复 `option_labels` 参数错误
+  - 原因: 在 `set_param()` 中使用了 `option_labels`，应使用 `PARAM_DEFINITIONS`
+
+- **上游数据获取错误**
+  - 修复获取上游数据方法不存在的问题
+  - 原因: 使用了错误的方法名 `get_input_data_recursive()`
+
+- **匹配数据格式错误**
+  - 修复 tuple 格式匹配数据无法处理的问题
+  - 原因: 灰度匹配返回 tuple 格式 `[(x,y,score),...]`，需要转换为 dict
+
+- **属性面板不刷新**
+  - 修复运行后属性面板参数不更新的问题
+  - 原因: 需要手动调用 `update_parameter()` 刷新UI
+
+### 📝 文档更新
+
+- 更新 `AGENTS.md` - 添加图像切片工具开发经验总结（第42节）
+
+---
+
+## [未发布] - 2026-02-26
+
+### 🚀 新增功能
+
+- **通讯自动连接**
+  - 方案加载后自动连接已配置的通讯项
+  - 新增"自动连接"选项（默认开启）
+  - 支持多通讯会话并存时同时连接
+  - 文件: `ui/communication_config.py`
+
+- **ROI编辑器实时预览**
+  - 绘制ROI过程中实时显示预览框
+  - 显示坐标和尺寸信息
+  - 便于可视化调整
+  - 文件: `ui/roi_selection_dialog.py`
+
+- **ROI编辑器模式切换**
+  - 区分"绘制ROI模式"和"拖拽移动模式"
+  - 支持图像缩放后拖拽移动
+  - 模式切换保持图像位置
+
+### 🐛 错误修复
+
+- **通讯连接问题**
+  - 修复保存设置后重新打开应用需要手动重连的问题
+  - 问题原因: `load_from_solution()` 加载配置后未触发自动连接
+
+- **ROI编辑器问题**
+  - 修复拖拽移动时ROI坐标计算错误
+  - 修复 QPointF 未定义错误
+  - 修复 _offset_x 属性不存在错误
+
+### 📝 文档更新
+
+- 新增 `documentation/RECENT_UPDATES.md`
+- 更新 `documentation/INDEX.md`
+- 更新 `documentation/PROJECT_OPTIMIZATION_GUIDE.md`
+- 更新 `AGENTS.md` - 添加经验总结
+
+---
+
 ## [未发布] - 2026-02-06
 
 ### 🚀 新增功能

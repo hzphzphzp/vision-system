@@ -1332,3 +1332,216 @@ translations = {
 1. Maintain translation dictionary for all exposed fields
 2. Use descriptive Chinese names
 3. Keep English field name in parentheses for reference
+
+---
+
+### 39. Communication Auto-Connect After Solution Load
+
+**Problem**: After saving communication settings and reopening application, all connections need manual reconnection.
+
+**Root Cause**: `ConnectionManager.load_from_solution()` method loads configuration but doesn't trigger auto-connect logic.
+
+**Solution**:
+```python
+# In ui/communication_config.py
+
+# 1. Add _auto_connect_all() method
+def _auto_connect_all(self):
+    """Auto-connect all configured connections"""
+    for conn_id, connection in self._connections.items():
+        auto_connect = connection.config.get("auto_connect", True)
+        if auto_connect:
+            self._create_and_connect_async(connection)
+
+# 2. Call after loading configuration
+def load_from_solution(self, communication_config: List[Dict]):
+    # ... load connections ...
+    self._auto_connect_all()  # Auto-connect all
+
+# 3. Add UI option for auto-connect
+# In ConnectionConfigDialog.setup_ui()
+self.auto_connect_check = QCheckBox("程序启动时自动建立连接")
+self.auto_connect_check.setChecked(True)
+
+# 4. Save auto_connect setting in config
+config["auto_connect"] = self.auto_connect_check.isChecked()
+```
+
+---
+
+### 40. ROI Editor Live Preview and Mode Switching
+
+**Problem**: 
+1. ROI box only appears after drawing is complete
+2. Cannot pan/move image while in ROI drawing mode
+
+**Root Causes**:
+1. No live preview during drawing
+2. All mouse events used for drawing, no pan mode
+
+**Solution**:
+```python
+# In ui/roi_selection_dialog.py
+
+# 1. Add mode switching UI
+self._btn_draw_mode = QRadioButton("绘制ROI模式")
+self._btn_pan_mode = QRadioButton("拖拽移动模式")
+
+# 2. Add mode variables
+self._is_draw_mode = True   # True=ROI drawing, False=pan mode
+self._offset_x = 0.0        # Image offset for panning
+self._offset_y = 0.0
+
+# 3. Add set_draw_mode() method
+def set_draw_mode(self, is_draw_mode: bool):
+    self._is_draw_mode = is_draw_mode
+    if is_draw_mode:
+        self.setCursor(Qt.CursorShape.CrossCursor)
+    else:
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+
+# 4. Modify mouse events to handle both modes
+def mousePressEvent(self, event):
+    if not self._is_draw_mode:
+        # Pan mode - start panning
+        self._is_panning = True
+        self._pan_start = event.pos()
+        self._pan_offset_start = (self._offset_x, self._offset_y)
+        return
+    # Drawing mode - draw ROI
+    self._is_drawing = True
+    ...
+
+# 5. Add live preview method
+def _draw_preview_rect(self, painter, offset_x, offset_y):
+    """Draw preview rectangle during drawing"""
+    # Draw semi-transparent green fill
+    # Draw green border
+    # Show coordinates and size info
+
+# 6. Fix coordinate calculations with offset
+# All x, y calculations must include offset
+x = (self.width() - self._image.width() * self._scale) / 2 + self._offset_x
+y = (self.height() - self._image.height() * self._scale) / 2 + self._offset_y
+```
+
+**Common Mistakes to Avoid**:
+1. Don't reset offset when switching modes (user expects to continue from where they left)
+2. Use tuples instead of QPointF for offset storage (QPointF may not be imported)
+3. Add offset to ALL coordinate calculations (mousePress, mouseMove, mouseRelease, paintEvent)
+4. Initialize offset variables in __init__
+
+---
+
+### 41. Documentation Update Checklist
+
+**Required Updates After New Features**:
+
+1. **CHANGELOG.md** (Root directory) - Update changelog with new features/fixes
+2. **README.md** - Update project header with latest update date
+3. **documentation/INDEX.md** - Add new documentation links if created
+4. **AGENTS.md** - Add lessons learned if it's a common pattern
+
+**Key Rules**:
+1. **Don't create duplicate documents** - Check if CHANGELOG.md already exists
+2. **Update existing documents** - Prefer updating CHANGELOG.md over creating new files
+3. **Complete index** - Ensure INDEX.md includes all documentation
+
+**Example Update Pattern**:
+```markdown
+# In CHANGELOG.md
+## [Unreleased] - YYYY-MM-DD
+
+### 🚀 New Features
+- Feature description
+
+### 🐛 Bug Fixes
+- Fixed issue
+
+### 📝 Documentation
+- Updated AGENTS.md
+```
+
+**Remember**: 
+- Always update CHANGELOG.md when adding new features or fixing bugs!
+- Check INDEX.md to ensure all docs are properly linked
+- Don't create new files if existing ones can be updated
+
+---
+
+### 42. Image Slice Tool Development Issues
+
+**Problems Encountered**:
+
+1. **Tool Not Registered**: Error "未找到工具: Vision.图像切片" when creating tool
+   
+   **Root Cause**: New tool module not imported in `tools/vision/__init__.py`
+   
+   **Solution**: Add import in `tools/vision/__init__.py`:
+   ```python
+   from .image_slice import ImageSliceTool
+   ```
+
+2. **option_labels Parameter Error**: `TypeError: ToolBase.set_param() got an unexpected keyword argument 'option_labels'`
+   
+   **Root Cause**: Using `option_labels` in `set_param()` call instead of `PARAM_DEFINITIONS`
+   
+   **Solution**: Define parameters with `option_labels` in `PARAM_DEFINITIONS` dictionary:
+   ```python
+   PARAM_DEFINITIONS = {
+       "切片模式": ToolParameter(
+           name="切片模式",
+           param_type="enum",
+           default="extract",
+           options=["extract", "remove"],
+           option_labels={  # Only in PARAM_DEFINITIONS!
+               "extract": "提取（保留选中区域）",
+               "remove": "去除（删除选中区域）",
+           },
+       ),
+   }
+   ```
+
+3. **Missing Method Error**: `'ImageSliceTool' object has no attribute 'get_input_data_recursive'`
+   
+   **Root Cause**: Using wrong method to get upstream data
+   
+   **Solution**: Use `get_upstream_values()` instead:
+   ```python
+   upstream_values = self.get_upstream_values()
+   ```
+
+4. **Tuple vs Dict Error**: `'tuple' object has no attribute 'get'`
+   
+   **Root Cause**: GrayMatch returns matches as tuples `[(x, y, score), ...]` not dicts
+   
+   **Solution**: Handle both tuple and dict formats:
+   ```python
+   for item in value:
+       if isinstance(item, tuple):
+           matches.append({
+               "x": item[0],
+               "y": item[1],
+               "score": item[2] if len(item) > 2 else 0,
+           })
+       elif isinstance(item, dict):
+           matches.append(item)
+   ```
+
+5. **Property Panel Not Updated After Auto-Increment**:
+   
+   **Root Cause**: UI doesn't refresh when parameter changes programmatically
+   
+   **Solution**: Manually call `update_parameter()` after changing parameter:
+   ```python
+   # In main_window.py after tool.run()
+   new_index = tool.get_param("结果索引", 0)
+   self.property_dock.update_parameter("结果索引", new_index)
+   ```
+
+**Key Points**:
+1. Always add new tool imports to `tools/vision/__init__.py`
+2. Use `PARAM_DEFINITIONS` for complex parameter definitions (enum with labels)
+3. Use correct method names: `get_upstream_values()` not `get_input_data_recursive()`
+4. Handle different data formats from different tools (tuple vs dict)
+5. Property panel needs manual refresh after programmatic parameter changes

@@ -18,6 +18,7 @@ from .cpu_optimization import CPUDetector
 from .calibration import CalibrationTool
 from .geometric_transform import GeometricTransformTool
 from .image_saver import ImageSaverTool
+from .image_slice import ImageSliceTool
 
 __all__ = [
     'AppearanceDetector',
@@ -45,5 +46,6 @@ __all__ = [
     'CPUDetector',
     'CalibrationTool',
     'GeometricTransformTool',
-    'ImageSaverTool'
+    'ImageSaverTool',
+    'ImageSliceTool'
 ]

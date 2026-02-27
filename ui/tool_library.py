@@ -498,6 +498,9 @@ class ToolLibraryWidget(QWidget):
                 "Vision", "圆查找", "圆查找", "⭕", "在图像中查找圆形"
             ),
             ToolItemData(
+                "Vision", "图像切片", "图像切片", "✂️", "对匹配目标进行精确切片处理，支持多结果浏览"
+            ),
+            ToolItemData(
                 "Recognition", "读码", "读码", "📱", "通用条码二维码识别"
             ),
             ToolItemData(
