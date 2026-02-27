@@ -547,24 +547,10 @@ class ToolLibraryWidget(QWidget):
             ),
             ToolItemData(
                 "IO",
-                "数字输入",
-                "数字输入",
+                "IO控制",
+                "IO控制",
                 "🔌",
-                "读取数字输入信号",
-            ),
-            ToolItemData(
-                "IO",
-                "数字输出",
-                "数字输出",
-                "💡",
-                "控制数字输出信号",
-            ),
-            ToolItemData(
-                "IO",
-                "触发器",
-                "触发器",
-                "⚡",
-                "触发信号控制",
+                "统一IO控制工具，支持数字输入/输出和触发器功能",
             ),
             ToolItemData(
                 "Vision",

@@ -6,10 +6,9 @@
 包含各种通信相关工具。
 """
 
-# 导入所有通信工具
 from .communication import SendData, ReceiveData, CommunicationManager, get_communication_manager
 from .enhanced_communication import SendDataTool, ReceiveDataTool, EnhancedSendData, EnhancedReceiveData
-from .io_control import DigitalInputTool, DigitalOutputTool, TriggerTool, IOSynchronizationTool
+from .io_control import IOControlTool, VirtualIOController, get_io_controller
 
 __all__ = [
     'SendData',
@@ -20,8 +19,6 @@ __all__ = [
     'ReceiveDataTool',
     'EnhancedSendData',
     'EnhancedReceiveData',
-    'DigitalInputTool',
-    'DigitalOutputTool',
-    'TriggerTool',
-    'IOSynchronizationTool'
+    'IOControlTool',
+    'VirtualIOController',
 ]
