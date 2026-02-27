@@ -546,6 +546,27 @@ class ToolLibraryWidget(QWidget):
                 "从外部设备接收数据",
             ),
             ToolItemData(
+                "IO",
+                "数字输入",
+                "数字输入",
+                "🔌",
+                "读取数字输入信号",
+            ),
+            ToolItemData(
+                "IO",
+                "数字输出",
+                "数字输出",
+                "💡",
+                "控制数字输出信号",
+            ),
+            ToolItemData(
+                "IO",
+                "触发器",
+                "触发器",
+                "⚡",
+                "触发信号控制",
+            ),
+            ToolItemData(
                 "Vision",
                 "YOLO26-CPU",
                 "YOLO26-CPU",
@@ -674,6 +695,7 @@ class ToolLibraryWidget(QWidget):
             "Analysis": "📊",
             "Communication": "📡",
             "DeepLearning": "🤖",
+            "IO": "🔌",
         }
         
         return category_icons.get(category, "📦")
