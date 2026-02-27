@@ -193,7 +193,7 @@ def save_image_fast(image: np.ndarray, path: str, quality: int = 95) -> bool:
     """快速保存图像
 
     Args:
-        image: 图像数组
+        image: 图像数组 (BGR格式)
         path: 保存路径
         quality: JPEG质量 (1-100)
 
@@ -202,6 +202,10 @@ def save_image_fast(image: np.ndarray, path: str, quality: int = 95) -> bool:
     """
     try:
         if PIL_AVAILABLE:
+            # 检查图像是否为BGR格式（3通道且不是灰度）
+            if len(image.shape) == 3 and image.shape[2] == 3:
+                # 将BGR转换为RGB
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             img = PILImage.fromarray(image)
             img.save(path, quality=quality, optimize=True)
             return True

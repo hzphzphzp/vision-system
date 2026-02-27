@@ -48,7 +48,7 @@ class ExtractionRuleWidget(QWidget):
         if rule_data:
             try:
                 self._rule = DataExtractionRule.from_dict(rule_data)
-            except:
+            except Exception:
                 self._rule = create_default_rule()
         else:
             self._rule = create_default_rule()

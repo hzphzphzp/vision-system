@@ -511,7 +511,7 @@ class HikCamera:
         """析构函数"""
         try:
             self.disconnect()
-        except:
+        except Exception:
             pass
 
 
@@ -782,5 +782,5 @@ class CameraManager:
         """析构函数 - 清理所有相机资源"""
         try:
             self.shutdown()
-        except:
+        except Exception:
             pass

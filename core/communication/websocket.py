@@ -128,7 +128,7 @@ class WebSocketClient(ProtocolBase):
         if self._reconnect_timer:
             try:
                 self._reconnect_timer.cancel()
-            except:
+            except Exception:
                 pass
             self._reconnect_timer = None
             logger.info("[WebSocketClient] 重连定时器已停止")

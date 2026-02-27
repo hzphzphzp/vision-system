@@ -245,7 +245,7 @@ class OCRReader(RecognitionToolBase):
             try:
                 font_path = "C:/Windows/Fonts/msyh.ttc"
                 font = ImageFont.truetype(font_path, 16)
-            except:
+            except Exception:
                 font = ImageFont.load_default()
 
             # 只有当detailed_results存在时才绘制
@@ -472,7 +472,7 @@ class OCREnglish(RecognitionToolBase):
             try:
                 font_path = "C:/Windows/Fonts/msyh.ttc"
                 font = ImageFont.truetype(font_path, 16)
-            except:
+            except Exception:
                 font = ImageFont.load_default()
 
             # 只有当detailed_results存在时才绘制

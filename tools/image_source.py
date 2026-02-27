@@ -25,6 +25,13 @@ from core.tool_base import (
     ToolRegistry,
 )
 
+USE_FAST_LOAD = False
+try:
+    from core.image_utils import load_image_fast
+    USE_FAST_LOAD = True
+except ImportError:
+    pass
+
 
 @ToolRegistry.register
 class ImageSource(ImageSourceToolBase):
@@ -57,11 +64,14 @@ class ImageSource(ImageSourceToolBase):
         if not file_path:
             raise Exception("未指定图像文件路径")
 
-        try:
-            image_data = np.fromfile(file_path, dtype=np.uint8)
-            image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
-        except:
-            image = cv2.imread(file_path)
+        if USE_FAST_LOAD:
+            image = load_image_fast(file_path, mode="BGR")
+        else:
+            try:
+                image_data = np.fromfile(file_path, dtype=np.uint8)
+                image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
+            except Exception:
+                image = cv2.imread(file_path)
 
         if image is None:
             raise Exception(f"无法读取图像: {file_path}")

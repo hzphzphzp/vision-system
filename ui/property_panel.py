@@ -20,6 +20,8 @@ import sys
 logging.basicConfig(level=logging.INFO)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+logger = logging.getLogger(__name__)
+
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -681,35 +683,35 @@ class ParameterWidgetFactory:
             options = kwargs.get("options", [])
             option_labels = kwargs.get("option_labels", {}) or {}
             
-            # 使用print代替logger，因为静态方法中没有self
-            print(f"【属性面板】创建ENUM控件: param_name={kwargs.get('param_name', 'unknown')}, value='{value}', options数量={len(options)}")
-            print(f"【属性面板】ENUM选项: {options}")
+            # 调试日志
+            logger.debug(f"【属性面板】创建ENUM控件: param_name={kwargs.get('param_name', 'unknown')}, value='{value}', options数量={len(options)}")
+            logger.debug(f"【属性面板】ENUM选项: {options}")
 
             if options:
                 # 使用 option_labels 显示中文名称，如果没有则使用原始值
                 for option in options:
                     display_text = option_labels.get(option, option)
                     widget.addItem(display_text, option)
-                    print(f"【属性面板】添加选项: display_text='{display_text}', option='{option}'")
+                    logger.debug(f"【属性面板】添加选项: display_text='{display_text}', option='{option}'")
             else:
                 # 默认选项
                 widget.addItems(["选项1", "选项2"])
 
             # 设置当前选中项（根据实际值）
             if value is not None and str(value).strip():
-                print(f"【属性面板】设置当前值: '{value}'")
+                logger.debug(f"【属性面板】设置当前值: '{value}'")
                 # 查找匹配的值
                 current_index = widget.findData(value)
-                print(f"【属性面板】findData结果: index={current_index}")
+                logger.debug(f"【属性面板】findData结果: index={current_index}")
                 if current_index >= 0:
                     widget.setCurrentIndex(current_index)
-                    print(f"【属性面板】已设置当前索引: {current_index}")
+                    logger.debug(f"【属性面板】已设置当前索引: {current_index}")
                 else:
                     # 如果找不到精确匹配，尝试字符串比较
-                    print(f"【属性面板】使用setCurrentText: '{str(value)}'")
+                    logger.debug(f"【属性面板】使用setCurrentText: '{str(value)}'")
                     widget.setCurrentText(str(value))
             else:
-                print(f"【属性面板】值为空，不设置当前选中项")
+                logger.debug(f"【属性面板】值为空，不设置当前选中项")
             widget.setStyleSheet(
                 """
                 QComboBox {

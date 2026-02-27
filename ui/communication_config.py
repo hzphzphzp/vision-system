@@ -284,8 +284,30 @@ class ConnectionManager:
                 )
                 self._connections[connection.id] = connection
             logger.info(f"[ConnectionManager] 从方案加载了 {len(communication_config)} 个连接配置")
+            
+            # 加载后自动连接所有
+            self._auto_connect_all()
+            
         except Exception as e:
             logger.error(f"[ConnectionManager] 从方案加载连接配置失败: {e}")
+    
+    def _auto_connect_all(self):
+        """自动连接所有配置为自动连接的通讯项"""
+        if not self._connections:
+            return
+        
+        logger.info("[ConnectionManager] 开始自动连接...")
+        
+        for conn_id, connection in list(self._connections.items()):
+            # 检查是否为自动连接模式
+            auto_connect = connection.config.get("auto_connect", True)
+            
+            if auto_connect:
+                logger.info(f"[ConnectionManager] 自动连接: {connection.name}")
+                # 异步创建并连接
+                self._create_and_connect_async(connection)
+            else:
+                logger.info(f"[ConnectionManager] 跳过非自动连接: {connection.name}")
     
     def clear_all_connections(self):
         """清空所有连接配置"""
@@ -296,7 +318,7 @@ class ConnectionManager:
                     if conn.protocol_instance and hasattr(conn.protocol_instance, 'disconnect'):
                         try:
                             conn.protocol_instance.disconnect()
-                        except:
+                        except Exception:
                             pass
                 self._connections.clear()
             logger.info("[ConnectionManager] 已清空所有连接配置")
@@ -379,6 +401,23 @@ class ConnectionManager:
         
         logger.info(f"[ConnectionManager] 启动后台创建: {connection.id}")
         return True
+    
+    def _create_and_connect_async(self, connection: ProtocolConnection):
+        """异步创建并连接协议实例"""
+        if connection.id in self._pending_workers:
+            logger.warning(f"[ConnectionManager] 连接正在创建中: {connection.id}")
+            return
+        
+        connection.status = "连接中..."
+        
+        worker = ProtocolCreateWorker(
+            connection.id, connection.protocol_type, connection.config
+        )
+        worker.finished.connect(self._on_protocol_created)
+        self._pending_workers[connection.id] = worker
+        worker.start()
+        
+        logger.info(f"[ConnectionManager] 启动自动连接: {connection.id}")
     
     def _on_protocol_created(self, connection_id: str, success: bool, instance):
         """协议实例创建完成回调"""
@@ -539,6 +578,12 @@ class ConnectionConfigDialog(QDialog):
         self.protocol_combo.currentTextChanged.connect(self.on_protocol_changed)
         info_layout.addWidget(self.protocol_combo, 1, 1)
 
+        # 自动连接选项
+        info_layout.addWidget(QLabel("自动连接:"), 2, 0)
+        self.auto_connect_check = QCheckBox("程序启动时自动建立连接")
+        self.auto_connect_check.setChecked(True)
+        info_layout.addWidget(self.auto_connect_check, 2, 1)
+
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
 
@@ -638,6 +683,10 @@ class ConnectionConfigDialog(QDialog):
                 if "port" in config:
                     self.port_spin.setValue(config["port"])
 
+            # 加载自动连接设置
+            auto_connect = config.get("auto_connect", True)
+            self.auto_connect_check.setChecked(auto_connect)
+
     def get_connection_config(self) -> Dict[str, Any]:
         """获取连接配置"""
         protocol_type = self.protocol_combo.currentText()
@@ -649,6 +698,9 @@ class ConnectionConfigDialog(QDialog):
         else:
             config["host"] = self.host_edit.text()
             config["port"] = self.port_spin.value()
+
+        # 添加自动连接配置
+        config["auto_connect"] = self.auto_connect_check.isChecked()
 
         # 添加数据映射配置
         if hasattr(self, '_current_mapping') and self._current_mapping:

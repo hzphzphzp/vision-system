@@ -33,8 +33,15 @@ from utils.image_processing_utils import (
     draw_circles,
     extract_contour,
     compute_hu_moments,
-    rotate_contour
+    rotate_contour,
 )
+
+USE_NUMBA = False
+try:
+    from core.numba_utils import ssd_match_parallel, warmup as numba_warmup
+    USE_NUMBA = True
+except ImportError:
+    pass
 
 
 class MatchMode(Enum):
@@ -211,9 +218,19 @@ class GrayMatch(ROIToolMixin, VisionAlgorithmToolBase):
             match_mode_name, cv2.TM_CCOEFF_NORMED
         )
 
-        result = cv2.matchTemplate(
-            gray_image, self._template_image, match_mode
-        )
+        # 使用Numba加速SSD匹配（仅在使用ssd模式时）
+        use_numba = USE_NUMBA and match_mode_name == "ssd"
+
+        if use_numba:
+            result = ssd_match_parallel(
+                gray_image.astype(np.float32),
+                self._template_image.astype(np.float32)
+            )
+            self._logger.debug("使用Numba加速SSD模板匹配")
+        else:
+            result = cv2.matchTemplate(
+                gray_image, self._template_image, match_mode
+            )
 
         # 使用numpy向量化操作，大幅提高性能
         if match_mode in [cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED]:

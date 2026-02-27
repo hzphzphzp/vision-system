@@ -8,6 +8,7 @@ Author: AI Agent
 Date: 2026-02-03
 """
 
+import logging
 import multiprocessing
 import threading
 import queue
@@ -15,6 +16,8 @@ import time
 import numpy as np
 from typing import Callable, Optional, List, Dict, Any
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -91,7 +94,7 @@ class PipelineStage:
             except queue.Empty:
                 continue
             except Exception as e:
-                print(f"Pipeline stage {self.name} error: {e}")
+                logger.error(f"Pipeline stage {self.name} error: {e}")
 
 
 class DeterministicPipeline:

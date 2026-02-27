@@ -23,6 +23,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from core.tool_base import ToolBase, ToolParameter, ToolRegistry
 from data.image_data import ImageData, ResultData
 
+USE_FAST_SAVE = False
+try:
+    from core.image_utils import save_image_fast
+    USE_FAST_SAVE = True
+except ImportError:
+    pass
+
 
 @ToolRegistry.register
 class ImageSaverTool(ToolBase):
@@ -220,20 +227,24 @@ class ImageSaverTool(ToolBase):
         
         # 保存图像
         try:
-            if image_format in ["JPG", "JPEG"]:
-                # JPG格式使用质量参数
-                encode_params = [cv2.IMWRITE_JPEG_QUALITY, jpg_quality]
-                success = cv2.imwrite(file_path, image, encode_params)
-            elif image_format == "PNG":
-                # PNG格式使用压缩级别
-                encode_params = [cv2.IMWRITE_PNG_COMPRESSION, 3]
-                success = cv2.imwrite(file_path, image, encode_params)
+            if USE_FAST_SAVE:
+                if image_format in ["JPG", "JPEG"]:
+                    quality = int(jpg_quality)
+                else:
+                    quality = 95
+                success = save_image_fast(image, file_path, quality=quality)
             else:
-                # 其他格式
-                success = cv2.imwrite(file_path, image)
+                if image_format in ["JPG", "JPEG"]:
+                    encode_params = [cv2.IMWRITE_JPEG_QUALITY, jpg_quality]
+                    success = cv2.imwrite(file_path, image, encode_params)
+                elif image_format == "PNG":
+                    encode_params = [cv2.IMWRITE_PNG_COMPRESSION, 3]
+                    success = cv2.imwrite(file_path, image, encode_params)
+                else:
+                    success = cv2.imwrite(file_path, image)
             
             if not success:
-                raise Exception(f"cv2.imwrite返回失败")
+                raise Exception(f"保存返回失败")
             
             self._save_count += 1
             self._logger.info(f"图像保存成功: {file_path}")

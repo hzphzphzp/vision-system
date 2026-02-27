@@ -25,7 +25,10 @@
 | 文档 | 说明 | 状态 |
 |------|------|------|
 | [PROJECT_REFERENCE.md](PROJECT_REFERENCE.md) | 项目参考信息 | 参考 |
+| [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) | 项目总结 | 参考 |
 | [SKILL_USAGE_GUIDE.md](SKILL_USAGE_GUIDE.md) | 技能使用指南 | 参考 |
+| [PROJECT_STRUCTURE_OPTIMIZATION_PLAN.md](PROJECT_STRUCTURE_OPTIMIZATION_PLAN.md) | 项目结构优化计划 | 计划 |
+| [TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md) | 技术文档 | 参考 |
 | [config_management_summary.md](config_management_summary.md) | 配置管理总结 | 参考 |
 
 ## 归档文档

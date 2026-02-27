@@ -256,7 +256,7 @@ class MultiImageSelector(ImageSourceToolBase):
         try:
             image_data = np.fromfile(current_path, dtype=np.uint8)
             image = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
-        except:
+        except Exception:
             image = cv2.imread(current_path)
         
         if image is None:

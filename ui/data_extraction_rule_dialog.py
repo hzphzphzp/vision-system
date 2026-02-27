@@ -512,7 +512,7 @@ class DataExtractionRuleDialog(QDialog):
                 else:
                     # 单个值
                     test_data = int(input_text)
-            except:
+            except Exception:
                 test_data = input_text
             
             # 应用规则

@@ -124,7 +124,7 @@ def check_system_capabilities():
             if "Flags:" in result.stdout:
                 flags = result.stdout.split("Flags:")[1].split("\n")[0].strip()
                 capabilities["simd_support"] = flags.split()
-        except:
+        except Exception:
             pass
 
     return capabilities

@@ -191,7 +191,7 @@ class TestVisionTools:
         try:
             result = tool.run()
             # 如果成功，说明有模板，这是OK的
-        except:
+        except Exception:
             # 预期会失败，这是正常的
             pass
 

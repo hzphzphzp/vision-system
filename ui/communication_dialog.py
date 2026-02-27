@@ -145,7 +145,7 @@ class CommunicationConfigDialog(QDialog):
             if "TCP客户端" in self._protocol_instances:
                 try:
                     self._protocol_instances["TCP客户端"].disconnect()
-                except:
+                except Exception:
                     pass
             self._connections["TCP客户端"] = False
             self._protocol_instances.pop("TCP客户端", None)
@@ -256,7 +256,7 @@ class CommunicationConfigDialog(QDialog):
 
         try:
             self.log_text.append(f'<span style="color: {color};">{log_entry}</span>')
-        except:
+        except Exception:
             pass
 
     def closeEvent(self, event):

@@ -10,6 +10,7 @@ Date: 2026-01-27
 """
 
 import importlib
+import logging
 import os
 import sys
 import threading
@@ -18,6 +19,8 @@ from typing import Callable, Dict, List, Set
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
+
+logger = logging.getLogger(__name__)
 
 
 class HotReloadEventHandler(FileSystemEventHandler):
@@ -96,7 +99,7 @@ class HotReloadManager:
 
     def _on_files_changed(self, changed_files: List[str]):
         """文件变化处理函数"""
-        print(
+        logger.info(
             f"[热重载] 检测到文件变化: {[os.path.basename(f) for f in changed_files]}"
         )
 
@@ -127,17 +130,17 @@ class HotReloadManager:
                 try:
                     if module_name in sys.modules:
                         importlib.reload(sys.modules[module_name])
-                        print(f"[热重载] 重新加载模块: {module_name}")
+                        logger.info(f"[热重载] 重新加载模块: {module_name}")
                         break  # 成功加载后跳出
                 except Exception as e:
-                    print(f"[热重载] 重新加载模块失败 {module_name}: {e}")
+                    logger.warning(f"[热重载] 重新加载模块失败 {module_name}: {e}")
 
         # 调用所有回调函数
         for callback in self.reload_callbacks:
             try:
                 callback()
             except Exception as e:
-                print(f"[热重载] 回调函数执行失败: {e}")
+                logger.error(f"[热重载] 回调函数执行失败: {e}")
 
     def add_reload_callback(self, callback: Callable):
         """
@@ -155,7 +158,7 @@ class HotReloadManager:
         if len(self.reload_callbacks) > max_callbacks:
             # 移除最旧的回调
             removed = self.reload_callbacks.pop(0)
-            print(f"[热重载] 回调数量超过限制，移除旧回调: {removed}")
+            logger.debug(f"[热重载] 回调数量超过限制，移除旧回调: {removed}")
 
     def remove_reload_callback(self, callback: Callable):
         """
@@ -184,7 +187,7 @@ class HotReloadManager:
             # 启动观察者
             self.observer.start()
             self.is_running = True
-            print(f"[热重载] 启动监控: {self.paths}")
+            logger.info(f"[热重载] 启动监控: {self.paths}")
 
     def stop(self):
         """停止热重载监控"""
@@ -192,7 +195,7 @@ class HotReloadManager:
             self.observer.stop()
             self.observer.join()
             self.is_running = False
-            print("[热重载] 停止监控")
+            logger.info("[热重载] 停止监控")
 
     def is_active(self) -> bool:
         """

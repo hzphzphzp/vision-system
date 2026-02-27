@@ -185,7 +185,7 @@ class TCPServer(ProtocolBase):
                 # 设置非阻塞模式，避免close阻塞
                 self._server_socket.setblocking(False)
                 self._server_socket.close()
-            except:
+            except Exception:
                 pass
             self._server_socket = None
             logger.info("[TCPServer] 服务器socket已关闭")
@@ -521,11 +521,11 @@ class TCPServer(ProtocolBase):
                             # 优雅关闭
                             try:
                                 client_socket.sendall(b"Server shutting down")
-                            except:
+                            except Exception:
                                 pass
                         client_socket.shutdown(socket.SHUT_RDWR)
                         client_socket.close()
-                    except:
+                    except Exception:
                         pass
                 del self._clients[client_id]
                 self._statistics["current_connections"] = len(self._clients)
@@ -551,7 +551,7 @@ class TCPServer(ProtocolBase):
         if self._heartbeat_timer:
             try:
                 self._heartbeat_timer.cancel()
-            except:
+            except Exception:
                 pass
             self._heartbeat_timer = None
 
@@ -609,20 +609,20 @@ if __name__ == "__main__":
     server = TCPServer()
     server.register_callback(
         "on_client_connect",
-        lambda cid, addr: print(f"客户端 {cid} 已连接: {addr}"),
+        lambda cid, addr: logger.info(f"客户端 {cid} 已连接: {addr}"),
     )
     server.register_callback(
-        "on_client_disconnect", lambda cid: print(f"客户端 {cid} 已断开")
+        "on_client_disconnect", lambda cid: logger.info(f"客户端 {cid} 已断开")
     )
 
     if server.listen({"port": 8888, "backlog": 5}):
-        print("服务端已启动，等待客户端连接...")
+        logger.info("服务端已启动，等待客户端连接...")
 
         try:
             while True:
                 client_id, data = server.receive_from(timeout=0.5)
                 if data:
-                    print(f"收到 [客户端{client_id}]: {data}")
+                    logger.info(f"收到 [客户端{client_id}]: {data}")
                     server.send_to(client_id, f"已收到: {data}")
         except KeyboardInterrupt:
             pass

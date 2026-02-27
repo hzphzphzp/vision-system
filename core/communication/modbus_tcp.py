@@ -123,11 +123,11 @@ class ModbusTCPClient(ProtocolBase):
             logger.info("[ModbusTCP] 关闭socket...")
             try:
                 self._socket.shutdown(socket.SHUT_RDWR)
-            except:
+            except Exception:
                 pass
             try:
                 self._socket.close()
-            except:
+            except Exception:
                 pass
             self._socket = None
             logger.info("[ModbusTCP] socket已关闭")
@@ -398,7 +398,7 @@ class ModbusTCPClient(ProtocolBase):
                     if trans_id in self._response_queues:
                         try:
                             self._response_queues[trans_id].put_nowait(pdu)
-                        except:
+                        except Exception:
                             pass
 
             except socket.timeout:

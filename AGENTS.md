@@ -1545,3 +1545,78 @@ y = (self.height() - self._image.height() * self._scale) / 2 + self._offset_y
 3. Use correct method names: `get_upstream_values()` not `get_input_data_recursive()`
 4. Handle different data formats from different tools (tuple vs dict)
 5. Property panel needs manual refresh after programmatic parameter changes
+
+---
+
+### 43. Performance Optimization Integration Issues
+
+**Problems Encountered**:
+
+1. **Import Error After Adding Numba Code**: `unmatched ')' (template_match.py, line 45)`
+
+   **Root Cause**: After adding try/except block for Numba import, accidentally deleted closing parenthesis of the import statement
+
+   **Solution**: Ensure import statements are properly formatted:
+   ```python
+   # Wrong - missing closing parenthesis
+   from utils.image_processing_utils import (
+       preprocess_image,
+       non_maximum_suppression,
+   )
+   
+   USE_NUMBA = False
+   try:
+       from core.numba_utils import ssd_match_parallel
+   except ImportError:
+       pass
+   
+   # Correct - imports placed AFTER try/except
+   from utils.image_processing_utils import (
+       preprocess_image,
+       non_maximum_suppression,
+       draw_matches,
+       draw_lines,
+   )
+   
+   USE_NUMBA = False
+   try:
+       from core.numba_utils import ssd_match_parallel
+   except ImportError:
+       pass
+   ```
+
+2. **Image Color Issue After Optimization**: Saved images appear blue/tinted
+
+   **Root Cause**: Pillow uses RGB format, OpenCV uses BGR format. When saving with Pillow without conversion, colors are swapped (BGR → RGB = blue/tinted)
+
+   **Solution**: Convert BGR to RGB before saving with Pillow:
+   ```python
+   def save_image_fast(image: np.ndarray, path: str, quality: int = 95) -> bool:
+       if PIL_AVAILABLE:
+           # Convert BGR to RGB for 3-channel images
+           if len(image.shape) == 3 and image.shape[2] == 3:
+               image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+           img = PILImage.fromarray(image)
+           img.save(path, quality=quality, optimize=True)
+           return True
+   ```
+
+3. **Integration Best Practices**
+
+   **Key Points**:
+   - Always test integration before committing
+   - Use graceful fallback when optimization modules unavailable
+   - Maintain backward compatibility with existing code
+   - Test color channels after image format conversion
+
+4. **Performance Optimization Modules Created**
+
+   **Modules**:
+   - `core/parallel_processing.py` - joblib-based parallel processing
+   - `core/numba_utils.py` - Numba JIT compilation functions
+   - `core/image_utils.py` - Fast image I/O with Pillow-SIMD
+
+   **Integration**:
+   - `tools/image_source.py` - Uses `load_image_fast()`
+   - `tools/vision/image_saver.py` - Uses `save_image_fast()`
+   - `tools/vision/template_match.py` - Uses `ssd_match_parallel()` for SSD mode

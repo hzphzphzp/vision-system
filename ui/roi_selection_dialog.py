@@ -125,6 +125,10 @@ class ROIEditorCanvas(ZoomableFrameMixin, QFrame):
 
         self._is_drawing = False
         self._is_editing = False
+        self._is_draw_mode = True  # True=绘制ROI模式, False=拖拽移动模式
+        self._is_panning = False  # 拖拽移动状态
+        self._pan_start = None  # 拖拽起始位置
+        self._pan_offset_start = None  # 拖拽起始偏移
         self._start_point = None
         self._current_point = None
 
@@ -137,6 +141,10 @@ class ROIEditorCanvas(ZoomableFrameMixin, QFrame):
         self._handle_size = 5
 
         self._keyboard_step = 1
+
+        # 图像偏移量（用于拖拽移动）
+        self._offset_x = 0.0
+        self._offset_y = 0.0
 
     def set_image(self, image):
         """设置显示的图像"""
@@ -178,6 +186,19 @@ class ROIEditorCanvas(ZoomableFrameMixin, QFrame):
         """设置ROI类型"""
         self._roi_type = roi_type
         self._roi_data = {}
+        self.update()
+
+    def set_draw_mode(self, is_draw_mode: bool):
+        """设置绘制模式
+        
+        Args:
+            is_draw_mode: True=绘制ROI模式, False=拖拽移动模式
+        """
+        self._is_draw_mode = is_draw_mode
+        if is_draw_mode:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
         self.update()
 
     def set_roi_data(self, roi_data: dict):
@@ -273,8 +294,8 @@ class ROIEditorCanvas(ZoomableFrameMixin, QFrame):
         painter.fillRect(self.rect(), QColor(50, 50, 50))
 
         if self._image is not None:
-            x = (self.width() - self._image.width() * self._scale) / 2
-            y = (self.height() - self._image.height() * self._scale) / 2
+            x = (self.width() - self._image.width() * self._scale) / 2 + self._offset_x
+            y = (self.height() - self._image.height() * self._scale) / 2 + self._offset_y
 
             scaled_image = self._image.scaled(
                 int(self._image.width() * self._scale),
@@ -288,8 +309,8 @@ class ROIEditorCanvas(ZoomableFrameMixin, QFrame):
             self._draw_roi(painter, x, y)
 
         if self._current_point and self._image and self._is_drawing:
-            x = (self.width() - self._image.width() * self._scale) / 2
-            y = (self.height() - self._image.height() * self._scale) / 2
+            x = (self.width() - self._image.width() * self._scale) / 2 + self._offset_x
+            y = (self.height() - self._image.height() * self._scale) / 2 + self._offset_y
             img_width = self._image.width() * self._scale
             img_height = self._image.height() * self._scale
 
@@ -298,12 +319,65 @@ class ROIEditorCanvas(ZoomableFrameMixin, QFrame):
                 and y <= self._current_point.y() <= y + img_height
             ):
 
+                # 绘制十字线
                 pen = QPen(QColor(255, 255, 255, 150), 1)
                 painter.setPen(pen)
                 px = int(self._current_point.x())
                 py = int(self._current_point.y())
                 painter.drawLine(px, int(y), px, int(y + img_height))
                 painter.drawLine(int(x), py, int(x + img_width), py)
+
+                # 实时显示绘制中的ROI矩形
+                self._draw_preview_rect(painter, x, y)
+
+    def _draw_preview_rect(self, painter: QPainter, offset_x: float, offset_y: float):
+        """绘制预览矩形（绘制过程中实时显示）"""
+        if not self._start_point or not self._current_point:
+            return
+
+        # 计算图像区域
+        img_width = self._image.width() * self._scale
+        img_height = self._image.height() * self._scale
+
+        # 获取鼠标在图像上的坐标
+        start_x = self._start_point.x()
+        start_y = self._start_point.y()
+        current_x = self._current_point.x()
+        current_y = self._current_point.y()
+
+        # 限制在图像范围内
+        start_x = max(offset_x, min(start_x, offset_x + img_width))
+        start_y = max(offset_y, min(start_y, offset_y + img_height))
+        current_x = max(offset_x, min(current_x, offset_x + img_width))
+        current_y = max(offset_y, min(current_y, offset_y + img_height))
+
+        # 计算矩形
+        left = min(start_x, current_x)
+        top = min(start_y, current_y)
+        width = abs(current_x - start_x)
+        height = abs(current_y - start_y)
+
+        # 转换为图像坐标
+        img_left = int((left - offset_x) / self._scale)
+        img_top = int((top - offset_y) / self._scale)
+        img_width_px = int(width / self._scale)
+        img_height_px = int(height / self._scale)
+
+        # 绘制半透明填充
+        fill_color = QColor(0, 255, 0, 50)
+        painter.fillRect(int(left), int(top), int(width), int(height), fill_color)
+
+        # 绘制边框
+        pen = QPen(QColor(0, 255, 0, 200), 2)
+        painter.setPen(pen)
+        painter.drawRect(int(left), int(top), int(width), int(height))
+
+        # 显示尺寸信息
+        font = QFont()
+        font.setPointSize(10)
+        painter.setFont(font)
+        size_text = f"{img_width_px} x {img_height_px}"
+        painter.drawText(int(left), int(top) - 5, f"ROI: ({img_left}, {img_top}) {size_text}")
 
     def _draw_roi(self, painter: QPainter, offset_x: float, offset_y: float):
         """绘制ROI"""
@@ -535,8 +609,16 @@ class ROIEditorCanvas(ZoomableFrameMixin, QFrame):
         if event.button() != Qt.MouseButton.LeftButton or not self._image:
             return
 
-        x = (self.width() - self._image.width() * self._scale) / 2
-        y = (self.height() - self._image.height() * self._scale) / 2
+        # 非绘制模式下，执行拖拽移动
+        if not self._is_draw_mode:
+            self._is_panning = True
+            self._pan_start = event.pos()
+            self._pan_offset_start = (self._offset_x, self._offset_y)
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            return
+
+        x = (self.width() - self._image.width() * self._scale) / 2 + self._offset_x
+        y = (self.height() - self._image.height() * self._scale) / 2 + self._offset_y
 
         if not (
             x <= event.pos().x() <= x + self._image.width() * self._scale
@@ -562,8 +644,17 @@ class ROIEditorCanvas(ZoomableFrameMixin, QFrame):
         if not self._image:
             return
 
-        x = (self.width() - self._image.width() * self._scale) / 2
-        y = (self.height() - self._image.height() * self._scale) / 2
+        x = (self.width() - self._image.width() * self._scale) / 2 + self._offset_x
+        y = (self.height() - self._image.height() * self._scale) / 2 + self._offset_y
+
+        # 拖拽移动模式
+        if self._is_panning and self._pan_start:
+            dx = event.pos().x() - self._pan_start.x()
+            dy = event.pos().y() - self._pan_start.y()
+            self._offset_x = self._pan_offset_start[0] + dx
+            self._offset_y = self._pan_offset_start[1] + dy
+            self.update()
+            return
 
         if self._is_editing and self._drag_start_roi:
             self._apply_resize(event.pos(), x, y)
@@ -630,6 +721,16 @@ class ROIEditorCanvas(ZoomableFrameMixin, QFrame):
         if event.button() != Qt.MouseButton.LeftButton:
             return
 
+        # 拖拽移动模式释放
+        if self._is_panning:
+            self._is_panning = False
+            self._pan_start = None
+            self._pan_offset_start = None
+            # 恢复光标
+            if not self._is_draw_mode:
+                self.setCursor(Qt.CursorShape.OpenHandCursor)
+            return
+
         if self._is_editing:
             self._is_editing = False
             self._drag_mode = self.DRAG_NONE
@@ -641,8 +742,8 @@ class ROIEditorCanvas(ZoomableFrameMixin, QFrame):
         if not self._is_drawing or not self._start_point:
             return
 
-        x = (self.width() - self._image.width() * self._scale) / 2
-        y = (self.height() - self._image.height() * self._scale) / 2
+        x = (self.width() - self._image.width() * self._scale) / 2 + self._offset_x
+        y = (self.height() - self._image.height() * self._scale) / 2 + self._offset_y
 
         img_x = int((event.pos().x() - x) / self._scale)
         img_y = int((event.pos().y() - y) / self._scale)
@@ -772,16 +873,39 @@ class ROISelectionDialog(QDialog):
         """初始化UI"""
         layout = QVBoxLayout(self)
 
+        # 工具栏 - 模式切换
+        toolbar_layout = QHBoxLayout()
+        
+        # 模式切换按钮组
+        self._mode_group = QButtonGroup(self)
+        
+        self._btn_draw_mode = QRadioButton("绘制ROI模式")
+        self._btn_draw_mode.setChecked(True)
+        self._btn_draw_mode.setToolTip("点击后使用鼠标左键绘制ROI区域")
+        self._mode_group.addButton(self._btn_draw_mode)
+        toolbar_layout.addWidget(self._btn_draw_mode)
+        
+        self._btn_pan_mode = QRadioButton("拖拽移动模式")
+        self._btn_pan_mode.setToolTip("点击后使用鼠标左键拖拽移动图像")
+        self._mode_group.addButton(self._btn_pan_mode)
+        toolbar_layout.addWidget(self._btn_pan_mode)
+        
+        toolbar_layout.addStretch()
+        
+        # 清除和撤销按钮
+        self._btn_clear = QPushButton("清除ROI")
+        toolbar_layout.addWidget(self._btn_clear)
+
+        self._btn_undo = QPushButton("撤销编辑 (Ctrl+Z)")
+        toolbar_layout.addWidget(self._btn_undo)
+        
+        layout.addLayout(toolbar_layout)
+
+        # 画布
         self._canvas = ROIEditorCanvas(self)
         layout.addWidget(self._canvas)
 
         button_layout = QHBoxLayout()
-
-        self._btn_clear = QPushButton("清除ROI")
-        button_layout.addWidget(self._btn_clear)
-
-        self._btn_undo = QPushButton("撤销编辑 (Ctrl+Z)")
-        button_layout.addWidget(self._btn_undo)
 
         button_layout.addStretch()
 
@@ -798,7 +922,7 @@ class ROISelectionDialog(QDialog):
         info_layout.addWidget(QLabel("操作提示:"))
         info_layout.addWidget(
             QLabel(
-                "拖拽移动 | 拖拽边角调整大小 | 方向键微调 | Ctrl+Z撤销 | 滚轮缩放"
+                "先选择模式 | 绘制模式:拖拽绘制ROI | 移动模式:拖拽移动图像 | 拖拽边角调整大小 | 方向键微调 | Ctrl+Z撤销 | 滚轮缩放"
             )
         )
         info_layout.addStretch()
@@ -815,9 +939,20 @@ class ROISelectionDialog(QDialog):
         self._btn_cancel.clicked.connect(self.reject)
         self._btn_confirm.clicked.connect(self.accept)
 
+        # 模式切换
+        self._btn_draw_mode.toggled.connect(self._on_mode_changed)
+        self._btn_pan_mode.toggled.connect(self._on_mode_changed)
+
         self._canvas.roi_changed.connect(self._on_roi_changed)
         self._canvas.roi_edited.connect(self.roi_edited)  # 暴露给外部
         self._canvas.zoom_changed.connect(self._on_zoom_changed)  # 缩放变化
+
+    def _on_mode_changed(self):
+        """模式切换处理"""
+        if self._btn_draw_mode.isChecked():
+            self._canvas.set_draw_mode(True)
+        else:
+            self._canvas.set_draw_mode(False)
 
     def set_image(self, image):
         """设置显示的图像"""

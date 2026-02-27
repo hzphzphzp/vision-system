@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cv2
 import numpy as np
 
+from core.model_cache import ModelCache
 from core.tool_base import ToolParameter, ToolRegistry, VisionAlgorithmToolBase
 from data.image_data import ROI, ImageData, ResultData
 

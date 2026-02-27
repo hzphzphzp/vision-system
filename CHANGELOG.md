@@ -49,6 +49,34 @@
 
 ---
 
+### 🚀 性能优化集成
+
+- **新增性能优化模块**
+  - `core/parallel_processing.py` - joblib多进程并行处理
+  - `core/numba_utils.py` - Numba JIT编译加速函数
+  - `core/image_utils.py` - 快速图像I/O操作
+
+- **工具集成优化**
+  - `tools/image_source.py` - 集成快速图像加载
+  - `tools/vision/image_saver.py` - 集成快速图像保存
+  - `tools/vision/template_match.py` - 集成Numba加速（SSD模式）
+
+### 🐛 错误修复
+
+- **语法错误**
+  - 修复 `template_match.py` 导入语句语法错误
+  - 原因: 在try/except块后意外删除了import语句的闭合括号
+
+- **图像色彩问题**
+  - 修复优化后保存图像偏蓝的问题
+  - 原因: Pillow使用RGB格式，OpenCV使用BGR格式，需要转换
+
+### 📝 文档更新
+
+- 更新 `AGENTS.md` - 添加性能优化集成经验总结（第43节）
+
+---
+
 ## [未发布] - 2026-02-26
 
 ### 🚀 新增功能

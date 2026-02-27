@@ -271,7 +271,7 @@ class SolutionFileManager:
                                     "dtype": str(output.data.dtype),
                                     "data": img_data,
                                 }
-                    except:
+                    except Exception:
                         pass
 
                 proc_data["tools"].append(tool_data)

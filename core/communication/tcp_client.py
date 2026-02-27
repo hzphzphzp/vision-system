@@ -220,11 +220,11 @@ class TCPClient(ProtocolBase):
                 # 先设置非阻塞模式，避免shutdown阻塞
                 sock.setblocking(False)
                 sock.shutdown(socket.SHUT_RDWR)
-            except:
+            except Exception:
                 pass
             try:
                 sock.close()
-            except:
+            except Exception:
                 pass
             logger.info("[TCPClient] socket已关闭")
 
@@ -530,7 +530,7 @@ class TCPClient(ProtocolBase):
         if self._health_check_timer:
             try:
                 self._health_check_timer.cancel()
-            except:
+            except Exception:
                 pass
             self._health_check_timer = None
 
@@ -614,8 +614,8 @@ if __name__ == "__main__":
         for i in range(5):
             data = client.receive(timeout=1.0)
             if data:
-                print(f"收到: {data}")
+                logger.info(f"收到: {data}")
             else:
-                print("等待数据...")
+                logger.info("等待数据...")
 
         client.disconnect()

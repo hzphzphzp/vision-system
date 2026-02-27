@@ -221,7 +221,7 @@ class HTTPClient(ProtocolBase):
 
             try:
                 result["data"] = response.json()
-            except:
+            except Exception:
                 result["data"] = response.text
 
             if not result["success"]:
