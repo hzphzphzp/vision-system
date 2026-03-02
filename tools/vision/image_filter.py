@@ -24,6 +24,13 @@ from core.tool_base import ImageProcessToolBase, ToolParameter, ToolRegistry
 from data.image_data import ROI, ImageData
 from utils.exceptions import ImageProcessException
 
+USE_NUMBA = False
+try:
+    from core.numba_utils import fast_box_filter, fast_gaussian_blur, fast_erode_dilate
+    USE_NUMBA = True
+except ImportError:
+    pass
+
 
 class FilterType(Enum):
     """滤波类型"""
@@ -105,8 +112,16 @@ class MeanFilter(ImageProcessToolBase):
         input_image = self._input_data.data
         kernel_size = self.get_param("kernel_size", 3)
 
-        # 执行滤波
-        output = cv2.blur(input_image, (kernel_size, kernel_size))
+        # 确保kernel_size为奇数
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+
+        # 使用Numba加速（如果可用且为灰度图）
+        if USE_NUMBA and len(input_image.shape) == 2:
+            output = fast_box_filter(input_image, kernel_size)
+            self._logger.debug("使用Numba加速均值滤波")
+        else:
+            output = cv2.blur(input_image, (kernel_size, kernel_size))
 
         self._output_data = self._input_data.copy()
         self._output_data.data = output
@@ -147,10 +162,18 @@ class GaussianFilter(ImageProcessToolBase):
         sigma_x = self.get_param("sigma_x", 0)
         sigma_y = self.get_param("sigma_y", 0)
 
-        # 执行滤波
-        output = cv2.GaussianBlur(
-            input_image, (kernel_size, kernel_size), sigma_x, sigma_y
-        )
+        # 确保kernel_size为奇数
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+
+        # 使用Numba加速（仅当sigma为默认0时）
+        if USE_NUMBA and sigma_x == 0 and sigma_y == 0 and len(input_image.shape) == 2:
+            output = fast_gaussian_blur(input_image, kernel_size)
+            self._logger.debug("使用Numba加速高斯滤波")
+        else:
+            output = cv2.GaussianBlur(
+                input_image, (kernel_size, kernel_size), sigma_x, sigma_y
+            )
 
         self._output_data = self._input_data.copy()
         self._output_data.data = output
@@ -320,18 +343,20 @@ class Morphology(ImageProcessToolBase):
         kernel_size = self.get_param("kernel_size", 3)
         iterations = self.get_param("iterations", 1)
 
-        # 创建核
-        kernel = cv2.getStructuringElement(
-            cv2.MORPH_RECT, (kernel_size, kernel_size)
-        )
-
-        # 获取操作码
-        operation = self.MORPH_OPERATIONS.get(operation_name, cv2.MORPH_OPEN)
-
-        # 执行形态学操作
-        output = cv2.morphologyEx(
-            input_image, operation, kernel, iterations=iterations
-        )
+        # 使用Numba加速（仅对腐蚀和膨胀，且为灰度图，单次迭代）
+        if USE_NUMBA and operation_name in ["erode", "dilate"] and iterations == 1 and len(input_image.shape) == 2:
+            for _ in range(iterations):
+                input_image = fast_erode_dilate(input_image, kernel_size, operation_name)
+            output = input_image
+            self._logger.debug(f"使用Numba加速形态学处理: {operation_name}")
+        else:
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_RECT, (kernel_size, kernel_size)
+            )
+            operation = self.MORPH_OPERATIONS.get(operation_name, cv2.MORPH_OPEN)
+            output = cv2.morphologyEx(
+                input_image, operation, kernel, iterations=iterations
+            )
 
         self._output_data = self._input_data.copy()
         self._output_data.data = output

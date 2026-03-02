@@ -30,8 +30,15 @@ from utils.image_processing_utils import (
     classify_defect,
     calculate_confidence,
     get_defect_name,
-    draw_detection_result
+    draw_detection_result,
 )
+
+USE_NUMBA = False
+try:
+    from core.numba_utils import fast_threshold, fast_histogram_equalization
+    USE_NUMBA = True
+except ImportError:
+    pass
 
 
 class DetectionType(Enum):
