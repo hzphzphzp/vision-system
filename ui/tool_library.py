@@ -589,6 +589,13 @@ class ToolLibraryWidget(QWidget):
             ),
             ToolItemData(
                 "Vision",
+                "手眼标定",
+                "手眼标定",
+                "🦾",
+                "机器人手眼标定，支持Eye-in-Hand和Eye-to-Hand两种模式",
+            ),
+            ToolItemData(
+                "Vision",
                 "几何变换",
                 "几何变换",
                 "🔄",

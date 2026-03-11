@@ -16,6 +16,7 @@ from .ocr import OCRReader, OCREnglish
 from .recognition import BarcodeReader, QRCodeReader
 from .cpu_optimization import CPUDetector
 from .calibration import CalibrationTool
+from .hand_eye_calibration import HandEyeCalibrationTool
 from .geometric_transform import GeometricTransformTool
 from .image_saver import ImageSaverTool
 from .image_slice import ImageSliceTool
@@ -45,6 +46,7 @@ __all__ = [
     'QRCodeReader',
     'CPUDetector',
     'CalibrationTool',
+    'HandEyeCalibrationTool',
     'GeometricTransformTool',
     'ImageSaverTool',
     'ImageSliceTool'

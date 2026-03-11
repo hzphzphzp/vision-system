@@ -5,7 +5,7 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布] - 2026-02-27
+## [未发布] - 2026-03-11
 
 ### 🚀 新增功能
 
@@ -43,11 +43,44 @@
   - 修复运行后属性面板参数不更新的问题
   - 原因: 需要手动调用 `update_parameter()` 刷新UI
 
+### 🔧 压力测试修复 (2026-03-11)
+
+- **ImageData输入验证**
+  - 新增图像数据类型验证（非numpy数组、空数组、维度错误等）
+  - 文件: `data/image_data.py`
+
+- **ToolRegistry使用说明**
+  - 明确工具注册在模块导入时触发
+  - 需先导入 `tools.vision` 再使用 `ToolRegistry.get_all_tools()`
+
+### 🚀 新增功能 (2026-03-11 补充)
+
+- **手眼标定工具 (HandEyeCalibrationTool)**
+  - 支持Eye-in-Hand（眼在手上）模式：相机安装在机器人末端
+  - 支持Eye-to-Hand（眼在手外）模式：相机固定安装
+  - 支持棋盘格、圆点格等标定板类型
+  - 包含完整的标定流程：数据采集、标定计算、结果保存
+  - 支持坐标转换：将像素坐标转换为机器人基座坐标
+  - 文件: `tools/vision/hand_eye_calibration.py`
+
+- **模型预加载功能**
+  - 新增 `core/model_preloader.py` 模型预加载管理器
+  - 程序启动时自动后台异步加载OCR和YOLO模型
+  - 提升首次使用响应速度，不阻塞GUI启动
+  - 文件: `run.py`, `core/model_preloader.py`
+
+- **手眼标定参数优化**
+  - 标定板类型选项添加中英文标签
+  - 方格尺寸参数添加单位(mm)
+  - 统一中英双语显示
+
 ### 📝 文档更新
 
-- 更新 `AGENTS.md` - 添加图像切片工具开发经验总结（第42节）
+- 更新 `AGENTS.md` - 添加压力测试问题总结（第44节）
 
 ---
+
+## [未发布] - 2026-02-27
 
 ### 🚀 性能优化集成
 

@@ -1620,3 +1620,229 @@ y = (self.height() - self._image.height() * self._scale) / 2 + self._offset_y
    - `tools/image_source.py` - Uses `load_image_fast()`
    - `tools/vision/image_saver.py` - Uses `save_image_fast()`
    - `tools/vision/template_match.py` - Uses `ssd_match_parallel()` for SSD mode
+
+---
+
+### 44. Pressure Testing Issues and Fixes (2026-03-11)
+
+**Problems Found During Pressure Testing**:
+
+1. **Tool name property works but set_name() method not explicit**
+
+   **Issue**: Deep copy of tool failed with `'GrayMatch' object has no attribute 'set_name'`
+
+   **Root Cause**: ToolBase already has `name` property setter, but the test code was looking for a separate `set_name()` method
+
+   **Solution**: The `name` property setter already exists in ToolBase (line 326-329), so use:
+   ```python
+   # Correct way to set name after copy
+   match_copy = copy.deepcopy(match)
+   match_copy.name = 'NewName'  # Use property setter
+   ```
+
+2. **Solution.save() method already exists**
+
+   **Issue**: Test called `save_to_file()` but method is named `save()`
+
+   **Root Cause**: Method naming inconsistency - `save()` exists, not `save_to_file()`
+
+   **Solution**: Use `solution.save('file.json')` instead:
+   ```python
+   from core.solution import Solution
+   from core.procedure import Procedure
+
+   sol = Solution(name='MySolution')
+   sol.add_procedure(Procedure(name='Process1'))
+   sol.save('my_solution.json')
+   ```
+
+3. **Parameter boundary validation already implemented**
+
+   **Issue**: Test tried to set invalid values like -0.5 and 1.5 for match_score
+
+   **Root Cause**: `_validate_and_fix_param()` already clamps values to valid range (0.0-1.0)
+
+   **Solution**: Validation works correctly:
+   ```python
+   match.set_param('match_score', -0.5)  # Automatically clamped to 0.0
+   match.set_param('match_score', 1.5)   # Automatically clamped to 1.0
+   ```
+
+4. **ImageData validation added for invalid inputs**
+
+   **Issue**: Could create ImageData with invalid data types (string, empty array)
+
+   **Root Cause**: No validation in ImageData constructor
+
+   **Solution**: Added validation in `data/image_data.py`:
+   ```python
+   # Added validation in __init__
+   if data is not None:
+       if not isinstance(data, np.ndarray):
+           raise ValueError(f"图像数据必须是numpy数组，实际类型: {type(data)}")
+       if data.size == 0:
+           raise ValueError("图像数据不能为空数组")
+       if len(data.shape) < 2 or len(data.shape) > 3:
+           raise ValueError(f"图像数据维度不正确，应为2D或3D，实际: {len(data.shape)}维")
+   ```
+
+5. **ToolRegistry returns 0 tools before importing tools module**
+
+   **Issue**: `ToolRegistry.get_all_tools()` returns 0 before tools module is imported
+
+   **Root Cause**: Tool registration happens at module import time, not automatically
+
+   **Solution**: Import tools module before checking registry:
+   ```python
+   from core.tool_base import ToolRegistry
+   import tools.vision  # Must import to trigger registration
+   tools = ToolRegistry.get_all_tools()
+   ```
+
+**Key Learnings**:
+
+1. Always import the tools module before checking ToolRegistry
+2. Use `name` property setter instead of looking for `set_name()` method
+3. Use `save()` instead of `save_to_file()` for Solution
+4. Parameter validation is already implemented in `_validate_and_fix_param()`
+5. Add input validation in constructors for robustness
+
+---
+
+### 45. Hand-Eye Calibration Module (2026-03-11)
+
+**Overview**: New `HandEyeCalibrationTool` for robot hand-eye calibration.
+
+**Supported Modes**:
+
+1. **Eye-in-Hand (眼在手上)**: Camera mounted on robot end-effector
+   - Calibrate relationship between camera and end-effector
+   - Use case: End-effector mounted vision
+
+2. **Eye-to-Hand (眼在手外)**: Fixed camera installation
+   - Calibrate relationship between camera and base
+   - Use case: Fixed overhead vision
+
+**Parameters**:
+
+| Parameter | Chinese Name | Description |
+|-----------|-------------|-------------|
+| calibration_mode | 标定模式 | Eye-in-Hand / Eye-to-Hand |
+| pattern_type | 标定板类型 | chessboard / circles / charuco |
+| pattern_width | 角点列数 | Number of inner corners horizontally |
+| pattern_height | 角点行数 | Number of inner corners vertically |
+| square_size | 方格尺寸(mm) | Physical size of each square in mm |
+
+**Usage**:
+
+```python
+from tools.vision.hand_eye_calibration import HandEyeCalibrationTool
+import numpy as np
+
+# Create tool
+tool = HandEyeCalibrationTool(name="手眼标定_1")
+
+# Set calibration mode
+tool.set_param("calibration_mode", "eye_in_hand")
+
+# Add calibration points (need robot poses and calibration board images)
+robot_pose = np.eye(4)  # 4x4 homogeneous transformation matrix
+tool.add_calibration_point(image, robot_pose)
+
+# Perform calibration
+result = tool.calibrate()
+
+# Save calibration result
+tool.save_calibration("hand_eye_calib.json")
+
+# Coordinate transformation
+point_base = tool.transform_point_to_base((x, y))
+```
+
+**Integration**:
+
+- Tool registered in `tools/vision/__init__.py`
+- UI entry added in `ui/tool_library.py`
+
+---
+
+### 46. Model Preloader for Performance Optimization (2026-03-11)
+
+**Problem**: OCR and YOLO models take 10-30 seconds to load on first use.
+
+**Solution**: `ModelPreloader` class in `core/model_preloader.py`
+
+**Features**:
+
+- Asynchronous model loading in background thread
+- Does not block GUI startup
+- Loads models automatically when program starts
+
+**Usage**:
+
+```python
+from core.model_preloader import preload_models, is_model_ready
+
+# Preload all models (non-blocking)
+preload_models(model_types=["ocr", "yolo"], wait=False)
+
+# Check if model is ready
+if is_model_ready("ocr"):
+    print("OCR model ready")
+```
+
+**Integration in run.py**:
+
+```python
+from core.model_preloader import preload_models
+
+# Called at GUI startup
+preload_models(model_types=["ocr", "yolo"], wait=False)
+```
+
+---
+
+### 47. Parameter Label Localization (2026-03-11)
+
+**Rule**: All enum parameters must have Chinese option_labels.
+
+**Correct Format**:
+
+```python
+PARAM_DEFINITIONS = {
+    "calibration_mode": ToolParameter(
+        name="标定模式",
+        param_type="enum",
+        default="eye_in_hand",
+        options=["eye_in_hand", "eye_to_hand"],
+        option_labels={
+            "eye_in_hand": "Eye-in-Hand (眼在手上)",
+            "eye_to_hand": "Eye-to-Hand (眼在手外)",
+        },
+    ),
+    "pattern_type": ToolParameter(
+        name="标定板类型",
+        param_type="enum",
+        default="chessboard",
+        options=["chessboard", "circles", "charuco"],
+        option_labels={
+            "chessboard": "Chessboard (棋盘格)",
+            "circles": "Circles (圆点格)",
+            "charuco": "Charuco (ArUco棋盘格)",
+        },
+    ),
+    "square_size": ToolParameter(
+        name="方格尺寸(mm)",  # Include unit in name
+        param_type="float",
+        default=10.0,
+        description="单个方格的实际物理尺寸，单位毫米(mm)",
+    ),
+}
+```
+
+**Key Points**:
+
+1. Always include `option_labels` for enum parameters
+2. Use bilingual format: "English (中文)"
+3. Include unit in parameter name if applicable: "方格尺寸(mm)"
+4. Description should clarify the unit if not in name

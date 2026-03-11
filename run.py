@@ -44,9 +44,19 @@ def setup_logging():
 def start_gui():
     """启动GUI界面"""
     try:
-        from PyQt5.QtWidgets import QApplication
+        from PyQt5.QtWidgets import QApplication, QMessageBox
 
         from ui.main_window import MainWindow
+
+        # 导入模型预加载器
+        from core.model_preloader import preload_models
+
+        # 提示用户模型正在预加载
+        print("正在后台预加载OCR和YOLO模型...")
+        print("模型将在后台加载，不影响界面启动速度")
+
+        # 后台预加载模型（不阻塞界面启动）
+        preload_models(model_types=["ocr", "yolo"], wait=False)
 
         app = QApplication(sys.argv)
         window = MainWindow()

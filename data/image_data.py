@@ -174,6 +174,15 @@ class ImageData:
             image_type: 图像类型
             _pool: 可选的内存池(内部使用)
         """
+        # 验证图像数据
+        if data is not None:
+            if not isinstance(data, np.ndarray):
+                raise ValueError(f"图像数据必须是numpy数组，实际类型: {type(data)}")
+            if data.size == 0:
+                raise ValueError("图像数据不能为空数组")
+            if len(data.shape) < 2 or len(data.shape) > 3:
+                raise ValueError(f"图像数据维度不正确，应为2D或3D，实际: {len(data.shape)}维")
+        
         self._use_pool = False
         self._pool = None
         
