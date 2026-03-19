@@ -1529,14 +1529,49 @@ y = (self.height() - self._image.height() * self._scale) / 2 + self._offset_y
    ```
 
 5. **Property Panel Not Updated After Auto-Increment**:
-   
+
    **Root Cause**: UI doesn't refresh when parameter changes programmatically
-   
+
    **Solution**: Manually call `update_parameter()` after changing parameter:
    ```python
    # In main_window.py after tool.run()
    new_index = tool.get_param("结果索引", 0)
    self.property_dock.update_parameter("结果索引", new_index)
+   ```
+
+6. **Slice Image Size Mismatch** (2026-03-19):
+
+   **Problem**: Sliced image size is smaller than the match region size
+
+   **Root Cause**: GrayMatch returns `matches` as tuples `[(x, y, score), ...]` without width/height. Although upstream provides `template_width/template_height`, the slice tool didn't use them to supplement missing dimensions.
+
+   **Solution**: When collecting matches, automatically supplement width/height from `template_width/template_height`:
+   ```python
+   template_width = upstream_values.get("template_width", 0)
+   template_height = upstream_values.get("template_height", 0)
+
+   for item in value:
+       if isinstance(item, tuple):
+           match_dict = {
+               "x": item[0],
+               "y": item[1],
+               "score": item[2] if len(item) > 2 else 0,
+           }
+           if len(item) > 3:
+               match_dict["width"] = item[3]
+           elif template_width > 0:
+               match_dict["width"] = template_width
+           if len(item) > 4:
+               match_dict["height"] = item[4]
+           elif template_height > 0:
+               match_dict["height"] = template_height
+           matches.append(match_dict)
+       elif isinstance(item, dict):
+           if template_width > 0 and "width" not in item:
+               item["width"] = template_width
+           if template_height > 0 and "height" not in item:
+               item["height"] = template_height
+           matches.append(item)
    ```
 
 **Key Points**:
@@ -1545,6 +1580,7 @@ y = (self.height() - self._image.height() * self._scale) / 2 + self._offset_y
 3. Use correct method names: `get_upstream_values()` not `get_input_data_recursive()`
 4. Handle different data formats from different tools (tuple vs dict)
 5. Property panel needs manual refresh after programmatic parameter changes
+6. When upstream data lacks width/height, supplement from `template_width/template_height`
 
 ---
 

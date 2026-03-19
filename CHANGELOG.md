@@ -5,6 +5,18 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布] - 2026-03-19
+
+### 🐛 错误修复
+
+- **图像切片工具画幅不匹配问题**
+  - 修复切片操作完成后生成的图像画幅整体小于匹配框的画幅问题
+  - 原因：灰度匹配输出的 `matches` 列表为 `(x, y, score)` 三元组，缺少 width/height 信息
+  - 修复方案：在 `_collect_input_matches` 方法中，当元组或字典缺少 width/height 时，自动从上游的 `template_width/template_height` 补充
+  - 文件: `tools/vision/image_slice.py`
+
+---
+
 ## [未发布] - 2026-03-11
 
 ### 🚀 新增功能

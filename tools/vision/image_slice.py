@@ -287,17 +287,33 @@ class ImageSliceTool(VisionAlgorithmToolBase):
 
         matches = []
 
+        template_width = upstream_values.get("template_width", 0)
+        template_height = upstream_values.get("template_height", 0)
+
         for key, value in upstream_values.items():
             if key in ["matches", "match_results", "detections"]:
                 if isinstance(value, list) and len(value) > 0:
                     for item in value:
                         if isinstance(item, tuple):
-                            matches.append({
+                            match_dict = {
                                 "x": item[0],
                                 "y": item[1],
                                 "score": item[2] if len(item) > 2 else 0,
-                            })
+                            }
+                            if len(item) > 3:
+                                match_dict["width"] = item[3]
+                            elif template_width > 0:
+                                match_dict["width"] = template_width
+                            if len(item) > 4:
+                                match_dict["height"] = item[4]
+                            elif template_height > 0:
+                                match_dict["height"] = template_height
+                            matches.append(match_dict)
                         elif isinstance(item, dict):
+                            if template_width > 0 and "width" not in item:
+                                item["width"] = template_width
+                            if template_height > 0 and "height" not in item:
+                                item["height"] = template_height
                             matches.append(item)
             elif key == "match_count" and isinstance(value, int):
                 count = value
