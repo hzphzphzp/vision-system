@@ -179,6 +179,8 @@ class ResultDetailWidget(QWidget):
             self._show_blob_result(result_data)
         elif category == "ocr":
             self._show_ocr_result(result_data)
+        elif category == "defect":
+            self._show_defect_result(result_data)
         else:
             self._show_general_result(result_data)
 
@@ -399,6 +401,49 @@ class ResultDetailWidget(QWidget):
                 )
         else:
             self._add_info_label("未检测到目标")
+
+    def _show_defect_result(self, result_data: ResultData):
+        """显示缺陷检测结果"""
+        defects = result_data.get_value("defects", [])
+        defect_count = result_data.get_value("defect_count", 0)
+
+        if isinstance(defects, list) and defects:
+            self._add_result_group(
+                "缺陷统计",
+                [
+                    ("缺陷数量", str(defect_count)),
+                ],
+            )
+
+            for i, defect in enumerate(defects[:20]):
+                defect_type = defect.get("type", "未知")
+                confidence = defect.get("confidence", 0)
+                location = defect.get("location", {})
+                area = defect.get("area", 0)
+
+                x = location.get("x", 0)
+                y = location.get("y", 0)
+                w = location.get("width", 0)
+                h = location.get("height", 0)
+
+                self._add_result_group(
+                    f"缺陷 {i+1}",
+                    [
+                        ("类型", defect_type),
+                        ("置信度", f"{confidence * 100:.1f}%"),
+                        ("面积", f"{area:.2f}"),
+                        (
+                            "位置",
+                            f"({x:.0f}, {y:.0f})",
+                        ),
+                        (
+                            "尺寸",
+                            f"{w:.0f} x {h:.0f}",
+                        ),
+                    ],
+                )
+        else:
+            self._add_info_label("未检测到缺陷")
 
     def _show_general_result(self, result_data: ResultData):
         """显示通用结果（字段名中文化）"""
@@ -927,6 +972,13 @@ class EnhancedResultPanel(QWidget):
                 category = "blob"
             elif "OCR" in tool_name or "ocr" in tool_name:
                 category = "ocr"
+            elif (
+                "外观" in tool_name
+                or "缺陷" in tool_name
+                or "defect" in tool_name.lower()
+                or "appearance" in tool_name.lower()
+            ):
+                category = "defect"
 
         result_data.result_category = category
 

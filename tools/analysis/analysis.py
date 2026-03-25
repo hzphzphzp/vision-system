@@ -319,6 +319,8 @@ class BlobFind(VisionAlgorithmToolBase):
 
         # 设置结果
         self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "blob"
         self._result_data.set_value("blob_count", len(blobs))
         self._result_data.set_value("blobs", blobs)
 
@@ -469,6 +471,8 @@ class PixelCount(VisionAlgorithmToolBase):
 
         # 设置结果
         self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "pixel_count"
         for key, value in results.items():
             self._result_data.set_value(key, value)
 
@@ -558,6 +562,10 @@ class Histogram(VisionAlgorithmToolBase):
         # 设置输出数据
         self._output_data = self._input_data.copy()
 
+        self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "histogram"
+
         # 生成直方图
         if histogram_type == "gray":
             # 转换为灰度图
@@ -575,7 +583,6 @@ class Histogram(VisionAlgorithmToolBase):
             hist = cv2.normalize(hist, hist).flatten()
 
             # 设置结果
-            self._result_data = ResultData()
             self._result_data.set_value("histogram", hist)
             self._result_data.set_value("histogram_type", "gray")
 
@@ -595,7 +602,6 @@ class Histogram(VisionAlgorithmToolBase):
                 histograms[f"channel_{i}"] = hist
 
             # 设置结果
-            self._result_data = ResultData()
             self._result_data.set_value("histograms", histograms)
             self._result_data.set_value("histogram_type", "color")
 
@@ -854,6 +860,8 @@ class Caliper(VisionAlgorithmToolBase):
 
         # 设置结果
         self._result_data = ResultData()
+        self._result_data.tool_name = self._name
+        self._result_data.result_category = "caliper"
         self._result_data.set_value("caliper_results", caliper_results)
         self._result_data.set_value(
             "total_edges",

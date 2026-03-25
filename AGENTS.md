@@ -1581,6 +1581,49 @@ y = (self.height() - self._image.height() * self._scale) / 2 + self._offset_y
 4. Handle different data formats from different tools (tuple vs dict)
 5. Property panel needs manual refresh after programmatic parameter changes
 6. When upstream data lacks width/height, supplement from `template_width/template_height`
+7. When adding new recognition/detection tools, ensure consistent `result_category` and data field names with result panel expectations
+
+---
+
+### 44. Result Panel Display Issues (2026-03-25)
+
+**Problems Encountered**:
+
+1. **QR Code Recognition Result Not Displayed**:
+
+   **Root Cause**: `QRCodeReader` only set `qrcodes` field, but result panel expects `codes` field for display
+
+   **Solution**: Add both fields for compatibility:
+   ```python
+   self._result_data.set_value("codes", results)  # For result panel display
+   self._result_data.set_value("qrcodes", results)  # For data selector
+   ```
+
+2. **Appearance Detection Result Not Displayed**:
+
+   **Root Cause**: `AppearanceDetector` uses `result_category = "detection"` and `defects` field, but result panel's `_show_detection_result()` expects `detections` field and different data format
+
+   **Solution**: 
+   - Change `result_category` to `"defect"`
+   - Add dedicated `_show_defect_result()` method in result panel
+   - Add detection logic for "外观"/"缺陷" in `add_result()`
+
+3. **Analysis Tools Missing Metadata**:
+
+   **Root Cause**: `BlobFind`, `Histogram`, `PixelCount`, `Caliper` etc. don't set `tool_name` and `result_category` in ResultData
+
+   **Solution**: Always set these fields when creating ResultData:
+   ```python
+   self._result_data = ResultData()
+   self._result_data.tool_name = self._name
+   self._result_data.result_category = "blob"  # or appropriate category
+   ```
+
+**Key Points**:
+- Result panel uses `codes` field for barcode/qrcode display
+- Result panel uses `defects` field for defect detection (with category "defect")
+- Result panel uses `detections` field for YOLO/object detection (with category "detection")
+- Always set `tool_name` and `result_category` for proper result categorization
 
 ---
 

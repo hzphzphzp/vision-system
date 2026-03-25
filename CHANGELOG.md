@@ -5,6 +5,32 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布] - 2026-03-25
+
+### 🐛 错误修复
+
+- **二维码识别结果界面不显示问题**
+  - 修复二维码识别成功后结果界面无法正常展示的问题
+  - 原因：二维码识别工具只设置了 `qrcodes` 字段，结果面板期望 `codes` 字段
+  - 修复方案：添加 `self._result_data.set_value("codes", results)`
+  - 文件: `tools/vision/recognition.py`
+
+- **外观检测结果界面不显示问题**
+  - 修复外观检测/缺陷检测结果在结果界面无法正常展示的问题
+  - 原因：外观检测使用 `result_category = "detection"` 和 `defects` 字段，但结果面板期望不同的格式
+  - 修复方案：
+    1. 将 `result_category` 改为 `"defect"`
+    2. 在结果面板添加专用的 `_show_defect_result()` 方法
+    3. 在 `add_result()` 中添加对外观/缺陷检测工具的识别
+  - 文件: `tools/vision/appearance_detection.py`, `ui/enhanced_result_panel.py`
+
+- **分析工具结果元数据缺失问题**
+  - 修复斑点分析、直方图、像素计数、卡尺测量等工具缺少 `tool_name` 和 `result_category` 设置的问题
+  - 修复方案：为各工具添加正确的 `tool_name` 和 `result_category` 设置
+  - 文件: `tools/analysis/analysis.py`
+
+---
+
 ## [未发布] - 2026-03-19
 
 ### 🐛 错误修复

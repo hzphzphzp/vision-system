@@ -385,6 +385,7 @@ class QRCodeReader(RecognitionToolBase):
                     )
 
             self._result_data.set_value("count", len(results))
+            self._result_data.set_value("codes", results)
             self._result_data.set_value("qrcodes", results)
             
             # 将第一个二维码的结果拆分为单独字段，方便数据选择
