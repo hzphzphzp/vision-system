@@ -374,9 +374,10 @@ class QRCodeReader(RecognitionToolBase):
                     )
 
                     # 绘制文本
+                    display_text = f"QR: {qr_data}" if len(qr_data) <= 30 else f"QR: {qr_data[:30]}..."
                     cv2.putText(
                         output_image,
-                        f"QR: {qr_data[:20]}...",
+                        display_text,
                         (x, y - 10),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.5,

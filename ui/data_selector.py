@@ -127,13 +127,8 @@ class DataSelectorDialog(QDialog):
             for field_name, value in fields.items():
                 # 翻译字段名
                 display_name = self._translate_field_name(field_name)
-                
-                # 值预览（截断长文本）
-                value_str = str(value)
-                if len(value_str) > 30:
-                    value_str = value_str[:27] + "..."
-                
-                field_item = QTreeWidgetItem([f"{display_name} ({field_name})", value_str])
+
+                field_item = QTreeWidgetItem([f"{display_name} ({field_name})", str(value)])
                 field_item.setData(0, Qt.UserRole, {
                     "type": "field",
                     "module": module_name,

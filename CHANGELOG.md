@@ -15,6 +15,15 @@
   - 修复方案：添加 `self._result_data.set_value("codes", results)`
   - 文件: `tools/vision/recognition.py`
 
+- **条码/二维码长内容显示被截断问题**
+  - 修复长内容码（如产品序列号、URL等）读取结果被截断的问题
+  - 发现多处UI显示代码对内容长度进行了限制：
+    - `enhanced_result_panel.py:850`: `[:10]` 限制
+    - `enhanced_result_panel.py:1070`: `[:20]` 限制
+    - `data_selector.py:133`: `[:27]` 限制
+  - 修复方案：移除或放宽UI显示的长度限制，确保完整数据能展示
+  - 文件: `tools/vision/recognition.py`, `ui/enhanced_result_panel.py`, `ui/data_selector.py`
+
 - **外观检测结果界面不显示问题**
   - 修复外观检测/缺陷检测结果在结果界面无法正常展示的问题
   - 原因：外观检测使用 `result_category = "detection"` 和 `defects` 字段，但结果面板期望不同的格式

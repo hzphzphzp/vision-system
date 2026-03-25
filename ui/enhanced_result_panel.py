@@ -847,7 +847,7 @@ class ResultVisualizationWidget(QWidget):
 
             # 绘制标签
             code_type = code.get("type", "CODE")
-            code_data = str(code.get("data", ""))[:10]
+            code_data = str(code.get("data", ""))
             label = f"{code_type}: {code_data}"
             painter.setPen(QColor(76, 175, 80))
             painter.drawText(int(draw_x), int(draw_y) - 5, label)
@@ -1066,8 +1066,8 @@ class EnhancedResultPanel(QWidget):
         if category in ["barcode", "qrcode", "code"]:
             codes = result_data.get_value("codes", [])
             if isinstance(codes, list) and codes:
-                for i, code in enumerate(codes[:5]):  # 最多显示5个
-                    data = code.get("data", "")[:20]
+                for i, code in enumerate(codes[:5]):
+                    data = code.get("data", "")
                     child = QTreeWidgetItem([f"  码 {i+1}: {data}"])
                     parent_item.addChild(child)
         elif category == "detection":
